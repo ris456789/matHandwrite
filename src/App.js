@@ -1,22 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useUser, SignInButton, UserButton, useAuth } from '@clerk/clerk-react';
+
+// Stripe price IDs - replace with your actual Stripe price IDs
+const STRIPE_PRICES = {
+  weekly: 'price_1SYk0GPWarjNYvPvIGYCWT6p',
+  monthly: 'price_1SYk10PWarjNYvPvuzjAI7Ov',
+  annual: 'price_1SYk1XPWarjNYvPvVm0P9mpZ'
+};
 
 export default function PDFHandwritingConverter() {
-  const [isSignedIn, setIsSignedIn] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const { isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [pdfLibLoaded, setPdfLibLoaded] = useState(false);
+  const [jsPdfLoaded, setJsPdfLoaded] = useState(false);
   const [penColor, setPenColor] = useState('#1a4d8f');
   const [strokeIntensity, setStrokeIntensity] = useState(2);
-  const [paperType, setPaperType] = useState('plain');
+  const [paperType, setPaperType] = useState('lined');
   const [activeTab, setActiveTab] = useState('landing');
   const [textMode, setTextMode] = useState('text');
   const [textInput, setTextInput] = useState('');
-  const [subscription, setSubscription] = useState({ subscribed: false, plan: null });
+  const [subscription, setSubscription] = useState({ subscribed: false, plan: null, status: null });
   const [conversionsUsed, setConversionsUsed] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
+  // Load PDF.js
   useEffect(() => {
     const pdfScript = document.createElement('script');
     pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -26,32 +37,109 @@ export default function PDFHandwritingConverter() {
       setPdfLibLoaded(true);
     };
     document.body.appendChild(pdfScript);
+
+    // Load jsPDF for PDF generation
+    const jsPdfScript = document.createElement('script');
+    jsPdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    jsPdfScript.onload = () => setJsPdfLoaded(true);
+    document.body.appendChild(jsPdfScript);
+
+    return () => {
+      document.body.removeChild(pdfScript);
+      document.body.removeChild(jsPdfScript);
+    };
   }, []);
 
-  const handleSignIn = () => {
-    setIsSignedIn(true);
-    setShowAuthModal(false);
+  // Fetch subscription status from your backend
+  const fetchSubscriptionStatus = useCallback(async () => {
+    if (!isSignedIn || !user) return;
+    
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/subscription/status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSubscription({
+          subscribed: data.subscribed,
+          plan: data.plan,
+          status: data.status
+        });
+        setConversionsUsed(data.conversionsUsed || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching subscription:', error);
+    }
+  }, [isSignedIn, user, getToken]);
+
+  useEffect(() => {
+    fetchSubscriptionStatus();
+  }, [fetchSubscriptionStatus]);
+
+  // Handle Stripe checkout
+  const handleCheckout = async (plan) => {
+    if (!isSignedIn) {
+      alert('Please sign in to subscribe');
+      return;
+    }
+
+    setCheckoutLoading(true);
+    
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          priceId: STRIPE_PRICES[plan],
+          plan: plan,
+          successUrl: `${window.location.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${window.location.origin}?canceled=true`
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to create checkout session');
+      
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Checkout error:', error);
+      alert('Failed to start checkout. Please try again.');
+    } finally {
+      setCheckoutLoading(false);
+    }
   };
 
-  const handleSignOut = () => {
-    setIsSignedIn(false);
-    setPages([]);
-    setConversionsUsed(0);
-    setTextInput('');
-    setActiveTab('landing');
-  };
-
-  const handleCheckout = (plan) => {
-    alert(`In production, this would redirect to Stripe checkout for the ${plan} plan!`);
-    setSubscription({ subscribed: true, plan });
-    setShowPaywall(false);
+  // Track conversion usage
+  const trackConversion = async () => {
+    if (!isSignedIn) return;
+    
+    try {
+      const token = await getToken();
+      await fetch('/api/conversions/track', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      setConversionsUsed(prev => prev + 1);
+    } catch (error) {
+      console.error('Error tracking conversion:', error);
+    }
   };
 
   const canConvert = () => {
     if (subscription.subscribed) {
-      if (subscription.plan === 'starter') {
-        return conversionsUsed < 10;
-      }
+      if (subscription.plan === 'starter') return conversionsUsed < 10;
       return true;
     }
     return conversionsUsed < 1;
@@ -59,11 +147,91 @@ export default function PDFHandwritingConverter() {
 
   const incrementConversions = () => {
     if (!isSignedIn) return;
-    const newCount = conversionsUsed + 1;
-    setConversionsUsed(newCount);
-    if (!subscription.subscribed && newCount >= 1) {
+    trackConversion();
+    if (!subscription.subscribed && conversionsUsed >= 0) {
       setShowPaywall(true);
     }
+  };
+
+  // Download as PDF
+  const downloadAsPDF = async (filename = 'handwritten-document') => {
+    if (!jsPdfLoaded || pages.length === 0) {
+      alert('PDF library not loaded or no pages to download');
+      return;
+    }
+
+    setLoading(true);
+    setLoadingMessage('Generating PDF...');
+
+    try {
+      const { jsPDF } = window.jspdf;
+      
+      // Get first page dimensions to set PDF size
+      const firstPage = pages[0];
+      const aspectRatio = firstPage.width / firstPage.height;
+      
+      // A4 dimensions in mm
+      const pdfWidth = 210;
+      const pdfHeight = pdfWidth / aspectRatio;
+      
+      const pdf = new jsPDF({
+        orientation: firstPage.width > firstPage.height ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: [pdfWidth, pdfHeight]
+      });
+
+      for (let i = 0; i < pages.length; i++) {
+        setLoadingMessage(`Adding page ${i + 1} of ${pages.length}...`);
+        
+        const page = pages[i];
+        const imgData = page.handwritten || page.original;
+        
+        if (i > 0) {
+          const pageAspect = page.width / page.height;
+          const pageWidth = 210;
+          const pageHeight = pageWidth / pageAspect;
+          pdf.addPage([pageWidth, pageHeight], page.width > page.height ? 'landscape' : 'portrait');
+        }
+        
+        const currentPageWidth = pdf.internal.pageSize.getWidth();
+        const currentPageHeight = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, currentPageWidth, currentPageHeight, undefined, 'FAST');
+      }
+
+      pdf.save(`${filename}.pdf`);
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Error generating PDF: ' + error.message);
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  // Download single page as PDF
+  const downloadPageAsPDF = async (pageIndex) => {
+    if (!jsPdfLoaded) {
+      alert('PDF library not loaded');
+      return;
+    }
+
+    const page = pages[pageIndex];
+    const { jsPDF } = window.jspdf;
+    
+    const aspectRatio = page.width / page.height;
+    const pdfWidth = 210;
+    const pdfHeight = pdfWidth / aspectRatio;
+    
+    const pdf = new jsPDF({
+      orientation: page.width > page.height ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: [pdfWidth, pdfHeight]
+    });
+
+    const imgData = page.handwritten || page.original;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+    pdf.save(`handwritten-page-${pageIndex + 1}.pdf`);
   };
 
   const handleTextFileUpload = async (e) => {
@@ -80,7 +248,7 @@ export default function PDFHandwritingConverter() {
     }
     
     if (file.size > warnSize) {
-      if (!window.window.confirm(`⚠️ This file is ${(file.size / 1024 / 1024).toFixed(1)}MB. Large files may take longer to process. Continue?`)) {
+      if (!window.confirm(`⚠️ This file is ${(file.size / 1024 / 1024).toFixed(1)}MB. Large files may take longer to process. Continue?`)) {
         e.target.value = '';
         return;
       }
@@ -95,14 +263,7 @@ export default function PDFHandwritingConverter() {
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         
         if (pdf.numPages > 20) {
-          if (!window.confirm(`⚠️ PDF has ${pdf.numPages} pages. Only the first 20 pages will be extracted for Text Mode. This may result in a LOT of text that won't fit on one handwritten page.\n\nContinue anyway?`)) {
-            setLoading(false);
-            setLoadingMessage('');
-            e.target.value = '';
-            return;
-          }
-        } else if (pdf.numPages > 10) {
-          if (!window.confirm(`⚠️ PDF has ${pdf.numPages} pages. Extracting text from all pages may result in too much text to fit on one handwritten page.\n\nContinue?`)) {
+          if (!window.confirm(`⚠️ PDF has ${pdf.numPages} pages. Only the first 20 pages will be extracted for Text Mode. Continue anyway?`)) {
             setLoading(false);
             setLoadingMessage('');
             e.target.value = '';
@@ -122,21 +283,7 @@ export default function PDFHandwritingConverter() {
         }
         
         if (allText.length > 15000) {
-          if (!window.confirm(`⚠️ Extracted text is ${allText.length.toLocaleString()} characters (approx. ${Math.ceil(allText.length / 5000)} pages needed). This is way too long for one handwritten page!\n\nMost content will be cut off. Continue anyway?`)) {
-            setLoading(false);
-            setLoadingMessage('');
-            e.target.value = '';
-            return;
-          }
-        } else if (allText.length > 8000) {
-          if (!window.confirm(`⚠️ Extracted text is ${allText.length.toLocaleString()} characters. This is quite long and will likely be cut off.\n\nContinue?`)) {
-            setLoading(false);
-            setLoadingMessage('');
-            e.target.value = '';
-            return;
-          }
-        } else if (allText.length > 5000) {
-          if (!window.confirm(`⚠️ Extracted text is ${allText.length.toLocaleString()} characters. Some content may not fit on one page. Continue?`)) {
+          if (!window.confirm(`⚠️ Extracted text is ${allText.length.toLocaleString()} characters. Most content will be cut off. Continue anyway?`)) {
             setLoading(false);
             setLoadingMessage('');
             e.target.value = '';
@@ -149,21 +296,7 @@ export default function PDFHandwritingConverter() {
         const text = await file.text();
         
         if (text.length > 15000) {
-          if (!window.confirm(`⚠️ Text file is ${text.length.toLocaleString()} characters. This is way too long for one handwritten page and most will be cut off!\n\nContinue anyway?`)) {
-            setLoading(false);
-            setLoadingMessage('');
-            e.target.value = '';
-            return;
-          }
-        } else if (text.length > 8000) {
-          if (!window.confirm(`⚠️ Text file is ${text.length.toLocaleString()} characters. This is quite long and will likely be cut off. Continue?`)) {
-            setLoading(false);
-            setLoadingMessage('');
-            e.target.value = '';
-            return;
-          }
-        } else if (text.length > 5000) {
-          if (!window.confirm(`⚠️ Text file is ${text.length.toLocaleString()} characters. Some content may not fit. Continue?`)) {
+          if (!window.confirm(`⚠️ Text file is ${text.length.toLocaleString()} characters. Most will be cut off! Continue anyway?`)) {
             setLoading(false);
             setLoadingMessage('');
             e.target.value = '';
@@ -189,19 +322,11 @@ export default function PDFHandwritingConverter() {
     if (!file) return;
     
     const maxSize = 25 * 1024 * 1024;
-    const warnSize = 5 * 1024 * 1024;
     
     if (file.size > maxSize) {
-      alert('❌ File size exceeds 25MB limit. Please upload a smaller file.');
+      alert('❌ File size exceeds 25MB limit.');
       e.target.value = '';
       return;
-    }
-    
-    if (file.size > warnSize) {
-      if (!window.confirm(`⚠️ This file is ${(file.size / 1024 / 1024).toFixed(1)}MB. Processing may be slow. Continue?`)) {
-        e.target.value = '';
-        return;
-      }
     }
     
     if (file.type === 'application/pdf') {
@@ -225,12 +350,7 @@ export default function PDFHandwritingConverter() {
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       
       if (pdf.numPages > 50) {
-        alert(`⚠️ PDF has ${pdf.numPages} pages. Only the first 50 will be processed to prevent browser slowdown.`);
-      } else if (pdf.numPages > 20) {
-        if (!window.confirm(`⚠️ PDF has ${pdf.numPages} pages. This may take a while to process. Continue?`)) {
-          setLoading(false);
-          return;
-        }
+        alert(`⚠️ PDF has ${pdf.numPages} pages. Only the first 50 will be processed.`);
       }
       
       const loadedPages = [];
@@ -249,7 +369,7 @@ export default function PDFHandwritingConverter() {
         await page.render({ canvasContext: ctx, viewport }).promise;
         
         loadedPages.push({
-          original: canvas.toDataURL(),
+          original: canvas.toDataURL('image/png'),
           handwritten: null,
           width: viewport.width,
           height: viewport.height
@@ -269,14 +389,6 @@ export default function PDFHandwritingConverter() {
     try {
       const text = await file.text();
       
-      if (text.length > 10000) {
-        if (!window.confirm(`⚠️ Text is ${text.length} characters. This may not fit on one page. Continue?`)) {
-          setLoading(false);
-          setLoadingMessage('');
-          return;
-        }
-      }
-      
       const canvas = document.createElement('canvas');
       canvas.width = 2100;
       canvas.height = 2970;
@@ -289,17 +401,13 @@ export default function PDFHandwritingConverter() {
       let y = 100;
       const maxLines = Math.floor((canvas.height - 200) / 60);
       
-      if (lines.length > maxLines) {
-        alert(`⚠️ Text has ${lines.length} lines but only ${maxLines} will fit. Content will be truncated.`);
-      }
-      
       lines.slice(0, maxLines).forEach(line => {
         ctx.fillText(line, 100, y);
         y += 60;
       });
       
       setPages([{
-        original: canvas.toDataURL(),
+        original: canvas.toDataURL('image/png'),
         handwritten: null,
         width: canvas.width,
         height: canvas.height
@@ -325,16 +433,12 @@ export default function PDFHandwritingConverter() {
       reader.onload = (e) => {
         const img = new Image();
         img.onerror = () => {
-          alert('❌ Error loading image. Please try a different file.');
+          alert('❌ Error loading image.');
           setLoading(false);
           setLoadingMessage('');
           resolve();
         };
         img.onload = () => {
-          if (img.width > 5000 || img.height > 5000) {
-            alert(`⚠️ Image is very large (${img.width}x${img.height}). Processing may be slow.`);
-          }
-          
           const canvas = document.createElement('canvas');
           canvas.width = img.width;
           canvas.height = img.height;
@@ -344,7 +448,7 @@ export default function PDFHandwritingConverter() {
           ctx.drawImage(img, 0, 0);
           
           setPages([{
-            original: canvas.toDataURL(),
+            original: canvas.toDataURL('image/png'),
             handwritten: null,
             width: canvas.width,
             height: canvas.height
@@ -401,11 +505,6 @@ export default function PDFHandwritingConverter() {
         ctx.arc(x, y, size, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.globalAlpha = 0.2;
-      for (let i = 0; i < 100; i++) {
-        ctx.fillStyle = '#b89968';
-        ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 5, Math.random() * 5);
-      }
       ctx.globalAlpha = 1;
     }
   };
@@ -421,19 +520,10 @@ export default function PDFHandwritingConverter() {
       return;
     }
 
-    const wordCount = textInput.split(/\s+/).filter(w => w.length > 0).length;
     const charCount = textInput.length;
     
     if (charCount > 15000) {
-      if (!window.confirm(`⚠️ Your text is ${charCount.toLocaleString()} characters (${wordCount} words).\n\nThis is WAY too long for one page - most content will be cut off!\n\nRecommendation: Reduce to under 5,000 characters.\n\nContinue anyway?`)) {
-        return;
-      }
-    } else if (charCount > 8000) {
-      if (!window.confirm(`⚠️ Your text is ${charCount.toLocaleString()} characters (${wordCount} words).\n\nThis is quite long and will likely be cut off.\n\nContinue?`)) {
-        return;
-      }
-    } else if (charCount > 5000) {
-      if (!window.confirm(`⚠️ Your text is ${charCount.toLocaleString()} characters (${wordCount} words).\n\nSome content may not fit on one page. Continue?`)) {
+      if (!window.confirm(`⚠️ Your text is ${charCount.toLocaleString()} characters. Most content will be cut off! Continue anyway?`)) {
         return;
       }
     }
@@ -463,7 +553,6 @@ export default function PDFHandwritingConverter() {
     
     let x = 100, y = 100;
     const maxWidth = canvas.width - 200;
-    let overflow = false;
     
     words.forEach((word) => {
       const metrics = ctx.measureText(word + ' ');
@@ -473,10 +562,7 @@ export default function PDFHandwritingConverter() {
         y += lineHeight + Math.random() * 5;
       }
       
-      if (y > canvas.height - 150) {
-        overflow = true;
-        return;
-      }
+      if (y > canvas.height - 150) return;
       
       ctx.save();
       ctx.translate(x, y);
@@ -491,13 +577,9 @@ export default function PDFHandwritingConverter() {
       x += metrics.width + letterSpacing;
     });
     
-    if (overflow) {
-      alert('⚠️ Warning: Your text was too long to fit on one page. Content was cut off.\n\nTip: Use the Flashcard style (smallest font) or reduce your text to under 5,000 characters.');
-    }
-    
     setPages([{
-      original: canvas.toDataURL(),
-      handwritten: canvas.toDataURL(),
+      original: canvas.toDataURL('image/png'),
+      handwritten: canvas.toDataURL('image/png'),
       width: canvas.width,
       height: canvas.height
     }]);
@@ -520,7 +602,7 @@ export default function PDFHandwritingConverter() {
       
       const img = new Image();
       img.onerror = () => {
-        alert('❌ Error loading image. Please try again.');
+        alert('❌ Error loading image.');
         resolve(false);
       };
       
@@ -552,13 +634,6 @@ export default function PDFHandwritingConverter() {
                 brightness,
                 index: i
               });
-            }
-          }
-          
-          if (darkPixels.length > 500000) {
-            if (!window.confirm(`⚠️ This page has a lot of content (${Math.floor(darkPixels.length / 1000)}k pixels). Processing may take 10-30 seconds. Continue?`)) {
-              resolve(false);
-              return;
             }
           }
           
@@ -619,7 +694,7 @@ export default function PDFHandwritingConverter() {
           ctx.globalAlpha = 1;
           
           const newPages = [...pages];
-          newPages[pageIndex].handwritten = canvas.toDataURL();
+          newPages[pageIndex].handwritten = canvas.toDataURL('image/png');
           setPages(newPages);
           
           if (!skipConversionCheck) {
@@ -643,12 +718,6 @@ export default function PDFHandwritingConverter() {
       return;
     }
     
-    if (pages.length > 10) {
-      if (!window.confirm(`⚠️ You're about to convert ${pages.length} pages. This may take several minutes. Continue?`)) {
-        return;
-      }
-    }
-    
     setLoading(true);
     for (let i = 0; i < pages.length; i++) {
       setLoadingMessage(`Converting page ${i + 1} of ${pages.length}...`);
@@ -658,14 +727,6 @@ export default function PDFHandwritingConverter() {
     setLoadingMessage('');
     
     incrementConversions();
-  };
-
-  const downloadPage = (pageIndex) => {
-    const page = pages[pageIndex];
-    const link = document.createElement('a');
-    link.download = `handwritten-page-${pageIndex + 1}.png`;
-    link.href = page.handwritten || page.original;
-    link.click();
   };
 
   const handleApplyStrokesClick = async (pageIndex) => {
@@ -681,18 +742,11 @@ export default function PDFHandwritingConverter() {
     setPages(newPages);
   };
 
-  const downloadAll = async () => {
-    for (let i = 0; i < pages.length; i++) {
-      downloadPage(i);
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white">
       <header className="border-b border-gray-800 backdrop-blur-sm bg-black/50 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('landing')}>
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
               <span className="text-xl">∫</span>
             </div>
@@ -703,50 +757,32 @@ export default function PDFHandwritingConverter() {
           <div>
             {isSignedIn ? (
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm font-bold">
-                  U
-                </div>
-                <button onClick={handleSignOut} className="text-sm text-gray-400 hover:text-white">
-                  Sign Out
-                </button>
+                <UserButton afterSignOutUrl="/" />
               </div>
             ) : (
               <div className="flex gap-3">
-                <button onClick={() => setShowAuthModal(true)} className="px-5 py-2 text-gray-300 hover:text-white transition-colors font-medium">
-                  Sign In
-                </button>
-                <button onClick={() => setShowAuthModal(true)} className="px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20">
-                  Get Started
-                </button>
+                <SignInButton mode="modal">
+                  <button className="px-5 py-2 text-gray-300 hover:text-white transition-colors font-medium">
+                    Sign In
+                  </button>
+                </SignInButton>
+                <SignInButton mode="modal">
+                  <button className="px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20">
+                    Get Started
+                  </button>
+                </SignInButton>
               </div>
             )}
           </div>
         </div>
       </header>
 
-      {showAuthModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-3xl p-8 max-w-md w-full">
-            <h2 className="text-3xl font-bold mb-6 text-center">Welcome!</h2>
-            <p className="text-gray-400 text-center mb-8">
-              This is a preview. In production, Clerk authentication would handle sign-in.
-            </p>
-            <button onClick={handleSignIn} className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-xl font-medium transition-all shadow-lg shadow-blue-500/30 mb-4">
-              Sign In (Demo)
-            </button>
-            <button onClick={() => setShowAuthModal(false)} className="w-full px-6 py-3 text-gray-400 hover:text-white transition-colors">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       {activeTab === 'landing' && (
         <div className="max-w-7xl mx-auto px-6 py-20">
           <div className="text-center space-y-12">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-sm text-blue-400 mb-4">
               <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
-              No LaTeX Required • 6 Handwriting Styles • Math & Text Modes • Instant Results
+              No LaTeX Required • 6 Handwriting Styles • Math & Text Modes • Instant PDF Download
             </div>
             
             <div className="relative">
@@ -773,12 +809,12 @@ export default function PDFHandwritingConverter() {
             </p>
 
             <div className="grid md:grid-cols-2 gap-8 pt-12 max-w-4xl mx-auto">
-              <div onClick={() => { setActiveTab('math'); setIsSignedIn(true); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-blue-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-blue-500/20">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-blue-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-blue-500/20">
                 <div className="text-center">
                   <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
                     <span className="text-6xl">🧮</span>
                   </div>
-                  <h3 className="text-3xl font-bold mb-4">Math Mode</h3>
+                  <h2 className="text-3xl font-bold mb-4">Math Mode</h2>
                   <p className="text-gray-400 text-lg mb-4">Upload PDFs or images with equations, formulas, and mathematical notation. Pixel-perfect preservation.</p>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
                     <span>✓</span>
@@ -790,12 +826,12 @@ export default function PDFHandwritingConverter() {
                 </div>
               </div>
 
-              <div onClick={() => { setActiveTab('text'); setIsSignedIn(true); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-purple-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-purple-500/20">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-purple-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-purple-500/20">
                 <div className="text-center">
                   <div className="w-24 h-24 bg-gradient-to-br from-purple-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
                     <span className="text-6xl">📝</span>
                   </div>
-                  <h3 className="text-3xl font-bold mb-4">Text Modes</h3>
+                  <h2 className="text-3xl font-bold mb-4">Text Modes</h2>
                   <p className="text-gray-400 text-lg mb-6">Type, paste, or upload text files and convert to 6 different handwriting styles. Perfect for notes and essays.</p>
                   <div className="inline-block px-6 py-3 bg-purple-600 rounded-xl font-semibold">
                     Start with Text Mode →
@@ -807,120 +843,83 @@ export default function PDFHandwritingConverter() {
             <div className="flex items-center justify-center gap-8 pt-4 text-sm text-gray-400">
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
-                <span>100% Private</span>
+                <span>100% Private - Client-side Processing</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
-                <span>Instant Results</span>
+                <span>Download as PDF</span>
               </div>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 pt-20 max-w-6xl mx-auto">
-              <div className="group bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-3xl p-8 hover:border-blue-500/50 transition-all hover:scale-105 transform">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform">
-                  <span className="text-4xl">🧮</span>
-                </div>
-                <h3 className="text-2xl font-bold mb-3">Math Mode</h3>
-                <p className="text-gray-400 leading-relaxed mb-3">Pixel-perfect conversion for equations, formulas, and mathematical notation. Preserves every symbol exactly as-is.</p>
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400">
-                  <span>✓</span>
-                  No LaTeX Required
-                </div>
-              </div>
+            <section className="pt-20 border-t border-gray-800">
+              <div className="max-w-4xl mx-auto">
+                <h2 className="text-4xl font-bold text-center mb-4">Transform Your Digital Math Notes Into Authentic Handwriting</h2>
+                <p className="text-center text-gray-400 text-lg mb-12">The only tool that converts typed math PDFs and digital documents into handwritten-looking pages while preserving every formula, graph, and equation perfectly</p>
+                
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 border border-blue-500/20 rounded-2xl p-8 hover:border-blue-500/40 transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-3xl">📐</span>
+                      <h3 className="text-2xl font-bold">Preserve Every Detail</h3>
+                    </div>
+                    <p className="text-gray-300 mb-4">Unlike other tools, we maintain your mathematical content exactly as it is. No loss of quality, no simplified equations.</p>
+                    <ul className="space-y-2 text-sm text-gray-400">
+                      <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Complex formulas stay intact</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Graphs and diagrams preserved perfectly</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Scientific notation & symbols unchanged</li>
+                    </ul>
+                  </div>
 
-              <div className="group bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-3xl p-8 hover:border-purple-500/50 transition-all hover:scale-105 transform">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform">
-                  <span className="text-4xl">✨</span>
+                  <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/30 border border-purple-500/20 rounded-2xl p-8 hover:border-purple-500/40 transition-all">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-3xl">✍️</span>
+                      <h3 className="text-2xl font-bold">6 Authentic Styles</h3>
+                    </div>
+                    <p className="text-gray-300 mb-4">Choose from multiple handwriting styles that look genuinely written by hand, not generated.</p>
+                    <ul className="space-y-2 text-sm text-gray-400">
+                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Clean readable • Journal natural • Cute bubbly</li>
+                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Signature elegant • Flashcard compact • Cursive flowing</li>
+                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Customize pen color & paper texture</li>
+                    </ul>
+                  </div>
                 </div>
-                <h3 className="text-2xl font-bold mb-3">6 Handwriting Styles</h3>
-                <p className="text-gray-400 leading-relaxed">From clean and readable to flowing cursive, bubbly to elegant signatures. Type or upload text files.</p>
-              </div>
 
-              <div className="group bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-3xl p-8 hover:border-pink-500/50 transition-all hover:scale-105 transform">
-                <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-pink-600 rounded-2xl flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform">
-                  <span className="text-4xl">⚡</span>
+                <div className="mt-8 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-8">
+                  <div className="grid md:grid-cols-3 gap-6">
+                    <div className="text-center">
+                      <p className="text-4xl font-bold text-blue-400 mb-2">0%</p>
+                      <p className="text-gray-300">Information Loss</p>
+                      <p className="text-sm text-gray-500 mt-1">Every detail preserved</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-4xl font-bold text-purple-400 mb-2">100%</p>
+                      <p className="text-gray-300">Authentic Look</p>
+                      <p className="text-sm text-gray-500 mt-1">Genuinely handwritten appearance</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-4xl font-bold text-pink-400 mb-2">1/10</p>
+                      <p className="text-gray-300">Minutes to Complete</p>
+                      <p className="text-sm text-gray-500 mt-1">Instant PDF download</p>
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-2xl font-bold mb-3">Lightning Fast</h3>
-                <p className="text-gray-400 leading-relaxed">Convert entire documents in seconds. Process 50+ pages at once. Download high-quality PNG files instantly.</p>
-              </div>
-            </div>
 
-            <div className="bg-gradient-to-br from-blue-500/5 to-purple-500/5 border border-blue-500/20 rounded-3xl p-12 mt-20 max-w-5xl mx-auto">
-              <h2 className="text-4xl font-bold text-center mb-10">Why Choose matHandwrite?</h2>
-              <div className="grid md:grid-cols-2 gap-8 text-left">
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">💰</span>
-                  <div>
-                    <strong className="text-xl text-white">Save Time & Money</strong>
-                    <p className="text-gray-400 mt-2">Stop spending hours handwriting notes. Convert 50 pages in the time it takes to write one. Focus on what matters.</p>
+                <div className="mt-8 text-center">
+                  <h3 className="text-2xl font-bold mb-4">Perfect For</h3>
+                  <div className="flex flex-wrap justify-center gap-3 mb-6">
+                    <span className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-full text-blue-300 text-sm font-medium">Calculus homework</span>
+                    <span className="px-4 py-2 bg-purple-500/20 border border-purple-500/30 rounded-full text-purple-300 text-sm font-medium">Physics problem sets</span>
+                    <span className="px-4 py-2 bg-pink-500/20 border border-pink-500/30 rounded-full text-pink-300 text-sm font-medium">Typed lecture notes</span>
+                    <span className="px-4 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-full text-cyan-300 text-sm font-medium">Math exams</span>
+                    <span className="px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-full text-green-300 text-sm font-medium">Research papers</span>
+                    <span className="px-4 py-2 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300 text-sm font-medium">Study materials</span>
                   </div>
-                </div>
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">🎯</span>
-                  <div>
-                    <strong className="text-xl text-white">Perfect for STEM Students</strong>
-                    <p className="text-gray-400 mt-2">Math Mode preserves complex equations, Greek letters, and scientific notation. No LaTeX required - just upload your PDF and we handle the rest.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">✍️</span>
-                  <div>
-                    <strong className="text-xl text-white">6 Handwriting Styles</strong>
-                    <p className="text-gray-400 mt-2">Multiple unique styles mean your handwriting looks different for each project. Clean for homework, casual for journals, elegant for signatures.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">🔒</span>
-                  <div>
-                    <strong className="text-xl text-white">100% Privacy Guaranteed</strong>
-                    <p className="text-gray-400 mt-2">All processing happens in your browser. Your documents never touch our servers. Complete privacy.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">📱</span>
-                  <div>
-                    <strong className="text-xl text-white">Works Everywhere</strong>
-                    <p className="text-gray-400 mt-2">Use on any device - desktop, laptop, tablet. No app installation required. Just open and convert.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <span className="text-3xl flex-shrink-0">🎨</span>
-                  <div>
-                    <strong className="text-xl text-white">Customize Everything</strong>
-                    <p className="text-gray-400 mt-2">Choose pen colors, paper types (plain, lined, aged), and handwriting intensity. Make it truly yours.</p>
-                  </div>
+                  <button onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl font-semibold transition-all shadow-lg shadow-blue-500/20">
+                    Convert Your First PDF Now →
+                  </button>
                 </div>
               </div>
-            </div>
-
-            <div className="mt-24 max-w-5xl mx-auto">
-              <h2 className="text-4xl font-bold text-center mb-4">How It Works</h2>
-              <p className="text-gray-400 text-center mb-12">Three simple steps to beautiful handwriting</p>
-              <div className="grid md:grid-cols-3 gap-12">
-                <div className="text-center relative">
-                  <div className="absolute top-8 left-1/2 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500 -z-10 hidden md:block" style={{ transform: 'translateX(-50%)' }}></div>
-                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 relative z-10">
-                    <span className="text-5xl">1️⃣</span>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-3">Choose Mode</h3>
-                  <p className="text-gray-400">Select Math Mode for equations or Text Mode for regular handwriting. Each optimized for different needs.</p>
-                </div>
-                <div className="text-center relative">
-                  <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 relative z-10">
-                    <span className="text-5xl">2️⃣</span>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-3">Add Content</h3>
-                  <p className="text-gray-400">Upload files (Math Mode) or type/paste/upload text (Text Mode). Customize style, colors, and paper type.</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-20 h-20 bg-gradient-to-br from-pink-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <span className="text-5xl">3️⃣</span>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-3">Download</h3>
-                  <p className="text-gray-400">Get your handwritten document as high-quality PNG. Print it, share it, or submit it - looks 100% authentic.</p>
-                </div>
-              </div>
-            </div>
+            </section>
           </div>
         </div>
       )}
@@ -966,26 +965,13 @@ export default function PDFHandwritingConverter() {
                 <textarea 
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Type or paste your text here... (or upload a file above)"
+                  placeholder="Type or paste your text here..."
                   className="w-full h-64 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition text-white resize-none"
                 />
                 <div className="text-right mt-2">
-                  <span className={`text-sm font-medium ${
-                    textInput.length > 15000 ? 'text-red-500' : 
-                    textInput.length > 8000 ? 'text-orange-400' :
-                    textInput.length > 5000 ? 'text-yellow-400' : 
-                    'text-gray-500'
-                  }`}>
+                  <span className={`text-sm font-medium ${textInput.length > 15000 ? 'text-red-500' : textInput.length > 8000 ? 'text-orange-400' : textInput.length > 5000 ? 'text-yellow-400' : 'text-gray-500'}`}>
                     {textInput.length.toLocaleString()} characters
-                    {textInput.length > 15000 && ' 🚨 Way too long!'}
-                    {textInput.length > 8000 && textInput.length <= 15000 && ' ⚠️ Very long'}
-                    {textInput.length > 5000 && textInput.length <= 8000 && ' ⚠️ Long'}
                   </span>
-                  {textInput.length > 5000 && (
-                    <div className="text-xs text-gray-400 mt-1">
-                      Recommended: Keep under 5,000 characters for best results
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -994,7 +980,6 @@ export default function PDFHandwritingConverter() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">🖊️ Pen Color</label>
                   <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} className="h-12 w-full rounded-lg cursor-pointer bg-gray-800 border border-gray-700" />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">📄 Paper Type</label>
                   <select value={paperType} onChange={(e) => setPaperType(e.target.value)} className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition text-white">
@@ -1079,8 +1064,7 @@ export default function PDFHandwritingConverter() {
             <div className="flex items-center gap-3">
               <span className="text-2xl">✨</span>
               <span className="text-sm">
-                <strong>{subscription.plan === 'starter' ? 'Starter' : subscription.plan === 'annual' ? 'Annual' : 'Pro'} Plan Active</strong> 
-                {subscription.plan === 'starter' ? ` - ${conversionsUsed}/10 documents used this month` : ' - Unlimited documents'}
+                <strong>{subscription.plan === 'weekly' ? 'Weekly' : subscription.plan === 'annual' ? 'Annual' : 'Monthly'} Plan Active</strong> - Unlimited documents
               </span>
             </div>
           </div>
@@ -1106,9 +1090,9 @@ export default function PDFHandwritingConverter() {
                 <span>✨</span>
                 Convert All Pages
               </button>
-              <button onClick={downloadAll} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20 ml-auto">
-                <span>⬇️</span>
-                Download All
+              <button onClick={() => downloadAsPDF('handwritten-document')} disabled={loading || !jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20 ml-auto disabled:opacity-50">
+                <span>📄</span>
+                Download PDF
               </button>
             </div>
 
@@ -1142,9 +1126,9 @@ export default function PDFHandwritingConverter() {
                       <span>✨</span>
                       Apply Strokes
                     </button>
-                    <button onClick={() => downloadPage(index)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-all">
-                      <span>💾</span>
-                      Download
+                    <button onClick={() => downloadPageAsPDF(index)} disabled={!jsPdfLoaded} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-all disabled:opacity-50">
+                      <span>📄</span>
+                      Download PDF
                     </button>
                     <button onClick={() => removePage(index)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600/20 border border-red-500 hover:bg-red-600/30 rounded-lg text-sm font-medium transition-all">
                       <span>🗑️</span>
@@ -1174,9 +1158,9 @@ export default function PDFHandwritingConverter() {
                 Switch to Math Mode
               </button>
             </div>
-            <button onClick={() => downloadPage(0)} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20">
-              <span>💾</span>
-              Download
+            <button onClick={() => downloadAsPDF('handwritten-text')} disabled={!jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20 disabled:opacity-50">
+              <span>📄</span>
+              Download PDF
             </button>
           </div>
           <div className="border-2 border-gray-700 rounded-xl overflow-hidden bg-gray-900">
@@ -1189,7 +1173,7 @@ export default function PDFHandwritingConverter() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4"></div>
-            <p className="text-gray-400 text-lg">{loadingMessage || 'Processing your file...'}</p>
+            <p className="text-gray-400 text-lg">{loadingMessage || 'Processing...'}</p>
           </div>
         </div>
       )}
@@ -1211,12 +1195,11 @@ export default function PDFHandwritingConverter() {
                 <ul className="space-y-2 text-sm text-gray-300 mb-6">
                   <li>✓ Unlimited conversions</li>
                   <li>✓ All modes & styles</li>
-                  <li>✓ All paper types</li>
-                  <li>✓ Download as PNG</li>
+                  <li>✓ PDF downloads</li>
                   <li>✓ Cancel anytime</li>
                 </ul>
-                <button onClick={() => handleCheckout('weekly')} className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium transition-all">
-                  Get Weekly
+                <button onClick={() => handleCheckout('weekly')} disabled={checkoutLoading} className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium transition-all disabled:opacity-50">
+                  {checkoutLoading ? 'Loading...' : 'Get Weekly'}
                 </button>
               </div>
 
@@ -1234,11 +1217,10 @@ export default function PDFHandwritingConverter() {
                   <li>✓ Everything in Weekly</li>
                   <li>✓ Batch convert 50+ pages</li>
                   <li>✓ Priority processing</li>
-                  <li>✓ Perfect for students</li>
                   <li>✓ Best value per month</li>
                 </ul>
-                <button onClick={() => handleCheckout('monthly')} className="w-full px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/30">
-                  Get Monthly
+                <button onClick={() => handleCheckout('monthly')} disabled={checkoutLoading} className="w-full px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/30 disabled:opacity-50">
+                  {checkoutLoading ? 'Loading...' : 'Get Monthly'}
                 </button>
               </div>
 
@@ -1251,12 +1233,11 @@ export default function PDFHandwritingConverter() {
                 <ul className="space-y-2 text-sm text-gray-300 mb-6">
                   <li>✓ Everything in Monthly</li>
                   <li>✓ Cover entire year</li>
-                  <li>✓ Best value overall</li>
-                  <li>✓ All future updates</li>
                   <li>✓ Biggest savings</li>
+                  <li>✓ All future updates</li>
                 </ul>
-                <button onClick={() => handleCheckout('annual')} className="w-full px-6 py-3 bg-green-600 hover:bg-green-500 rounded-xl font-medium transition-all">
-                  Get Annual
+                <button onClick={() => handleCheckout('annual')} disabled={checkoutLoading} className="w-full px-6 py-3 bg-green-600 hover:bg-green-500 rounded-xl font-medium transition-all disabled:opacity-50">
+                  {checkoutLoading ? 'Loading...' : 'Get Annual'}
                 </button>
               </div>
             </div>
