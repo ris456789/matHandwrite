@@ -5,7 +5,7 @@ import { useUser, SignInButton, UserButton, useAuth } from '@clerk/clerk-react';
 const STRIPE_PRICES = {
   weekly: 'price_1SZUUxBNLr4e4J9pU0gor6S2',
   monthly: 'price_1SZUVbBNLr4e4J9pzfb15aZo',
-  annual: 'price_1SZUWYBNLr4e4J9pu7PYs5BW'
+  annual: 'price_1SZUwYBNLr4e4J9pu7PYs5BW'
 };
 
 export default function PDFHandwritingConverter() {
