@@ -3,9 +3,9 @@ import { useUser, SignInButton, UserButton, useAuth } from '@clerk/clerk-react';
 
 // Stripe price IDs - replace with your actual Stripe price IDs
 const STRIPE_PRICES = {
-  weekly: 'price_1SYk0GPWarjNYvPvIGYCWT6p',
-  monthly: 'price_1SYk10PWarjNYvPvuzjAI7Ov',
-  annual: 'price_1SYk1XPWarjNYvPvVm0P9mpZ'
+  weekly: 'price_1SZUUxBNLr4e4J9pU0gor6S2',
+  monthly: 'price_1SZUVbBNLr4e4J9pzfb15aZo',
+  annual: 'price_1SZUWYBNLr4e4J9pu7PYs5BW'
 };
 
 export default function PDFHandwritingConverter() {
