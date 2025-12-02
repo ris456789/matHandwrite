@@ -744,38 +744,55 @@ export default function PDFHandwritingConverter() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white">
-      <header className="border-b border-gray-800 backdrop-blur-sm bg-black/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('landing')}>
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-xl">∫</span>
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              matHandwrite
-            </span>
-          </div>
-          <div>
-            {isSignedIn ? (
-              <div className="flex items-center gap-3">
-                <UserButton afterSignOutUrl="/" />
-              </div>
-            ) : (
-              <div className="flex gap-3">
-                <SignInButton mode="modal">
-                  <button className="px-5 py-2 text-gray-300 hover:text-white transition-colors font-medium">
-                    Sign In
-                  </button>
-                </SignInButton>
-                <SignInButton mode="modal">
-                  <button className="px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20">
-                    Get Started
-                  </button>
-                </SignInButton>
-              </div>
-            )}
-          </div>
+     <header className="border-b border-gray-800 backdrop-blur-sm bg-black/50 sticky top-0 z-40">
+  <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+
+    {/* Left side — Logo + Name */}
+    <div
+      className="flex items-center gap-3 cursor-pointer"
+      onClick={() => setActiveTab('landing')}
+    >
+      <img
+        src="/logo.png"
+        alt="MatHandWrite logo"
+        className="w-10 h-10 rounded-lg object-contain"
+      />
+
+      <div className="flex flex-col">
+        <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+          MatHandWrite
+        </span>
+        <span className="text-xs text-gray-400">
+          Convert math & notes into handwriting
+        </span>
+      </div>
+    </div>
+
+    {/* Right side — Auth buttons */}
+    <div>
+      {isSignedIn ? (
+        <div className="flex items-center gap-3">
+          <UserButton afterSignOutUrl="/" />
         </div>
-      </header>
+      ) : (
+        <div className="flex gap-3">
+          <SignInButton mode="modal">
+            <button className="px-5 py-2 text-gray-300 hover:text-white transition-colors font-medium">
+              Sign In
+            </button>
+          </SignInButton>
+          <SignInButton mode="modal">
+            <button className="px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20">
+              Get Started
+            </button>
+          </SignInButton>
+        </div>
+      )}
+    </div>
+
+  </div>
+</header>
+
 
       {activeTab === 'landing' && (
         <div className="max-w-7xl mx-auto px-6 py-20">
