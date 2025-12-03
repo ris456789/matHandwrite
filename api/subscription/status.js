@@ -52,6 +52,7 @@ export default async function handler(req, res) {
       subscribed: !!subscription,
       plan: subscription?.plan || null,
       status: subscription?.status || null,
+      stripeCustomerId: subscription?.stripe_customer_id || null,
       conversionsUsed: conversionsUsed || 0
     });
   } catch (error) {
