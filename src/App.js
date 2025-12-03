@@ -22,7 +22,7 @@ export default function PDFHandwritingConverter() {
   const [activeTab, setActiveTab] = useState('landing');
   const [textMode, setTextMode] = useState('text');
   const [textInput, setTextInput] = useState('');
-  const [subscription, setSubscription] = useState({ subscribed: false, plan: null, status: null });
+  const [subscription, setSubscription] = useState({ subscribed: false, plan: null, status: null, stripeCustomerId: null });
   const [conversionsUsed, setConversionsUsed] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -51,7 +51,7 @@ export default function PDFHandwritingConverter() {
   }, []);
 
   // Fetch subscription status from your backend
-  const fetchSubscriptionStatus = useCallback(async () => {
+ const fetchSubscriptionStatus = useCallback(async () => {
     if (!isSignedIn || !user) return;
     
     try {
@@ -68,7 +68,8 @@ export default function PDFHandwritingConverter() {
         setSubscription({
           subscribed: data.subscribed,
           plan: data.plan,
-          status: data.status
+          status: data.status,
+          stripeCustomerId: data.stripeCustomerId
         });
         setConversionsUsed(data.conversionsUsed || 0);
       }
@@ -81,7 +82,36 @@ export default function PDFHandwritingConverter() {
     fetchSubscriptionStatus();
   }, [fetchSubscriptionStatus]);
 
-  // Handle Stripe checkout
+  const handleManageSubscription = async () => {
+    if (!subscription.stripeCustomerId) {
+      alert('No active subscription found');
+      return;
+    }
+
+    setCheckoutLoading(true);
+    try {
+      const response = await fetch('/api/stripe/create-portal-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          customerId: subscription.stripeCustomerId
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to create portal session');
+      
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Portal error:', error);
+      alert('Failed to open billing portal. Please try again.');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
   const handleCheckout = async (plan) => {
     if (!isSignedIn) {
       alert('Please sign in to subscribe');
@@ -118,7 +148,6 @@ export default function PDFHandwritingConverter() {
     }
   };
 
-  // Track conversion usage
   const trackConversion = async () => {
     if (!isSignedIn) return;
     
@@ -1076,17 +1105,26 @@ export default function PDFHandwritingConverter() {
       )}
 
       {subscription.subscribed && pages.length > 0 && (
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">✨</span>
-              <span className="text-sm">
-                <strong>{subscription.plan === 'weekly' ? 'Weekly' : subscription.plan === 'annual' ? 'Annual' : 'Monthly'} Plan Active</strong> - Unlimited documents
-              </span>
-            </div>
-          </div>
+  <div className="max-w-7xl mx-auto px-6 py-4">
+    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">✨</span>
+          <span className="text-sm">
+            <strong>{subscription.plan === 'weekly' ? 'Weekly' : subscription.plan === 'annual' ? 'Annual' : 'Monthly'} Plan Active</strong> - Unlimited documents
+          </span>
         </div>
-      )}
+        <button 
+          onClick={handleManageSubscription} 
+          disabled={checkoutLoading}
+          className="px-5 py-2 bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+        >
+          {checkoutLoading ? 'Loading...' : 'Manage Subscription'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {pages.length > 0 && activeTab === 'math' && (
         <div className="max-w-7xl mx-auto px-6 py-8">
