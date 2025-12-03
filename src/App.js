@@ -1265,6 +1265,43 @@ export default function PDFHandwritingConverter() {
           </div>
         </div>
       )}
+         <footer className="border-t border-gray-800 bg-black/50 mt-20">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            
+            <div className="flex items-center gap-3">
+              <img
+                src="/logo.png"
+                alt="MatHandWrite logo"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <div className="text-sm text-gray-400">
+                © 2025 MatHandWrite. All rights reserved.
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6 text-sm">
+              <a 
+                href="/privacy-policy.html" 
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                Privacy Policy
+              </a>
+              <a 
+                href="mailto:support@mathandwrite.com"
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                Contact Support
+              </a>
+            </div>
+
+          </div>
+        </div>
+      </footer>
+      {/* ========== END FOOTER ========== */}
+
     </div>
   );
 }
