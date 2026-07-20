@@ -8,6 +8,20 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+// API version 2025-10-29.clover moved current_period_start/end off the
+// subscription object and onto its first item.
+function getPeriodDates(subscription) {
+  const item = subscription.items?.data?.[0];
+  return {
+    current_period_start: item?.current_period_start
+      ? new Date(item.current_period_start * 1000).toISOString()
+      : null,
+    current_period_end: item?.current_period_end
+      ? new Date(item.current_period_end * 1000).toISOString()
+      : null,
+  };
+}
+
 export const config = {
   api: { bodyParser: false },
 };
@@ -38,8 +52,7 @@ export default async function handler(req, res) {
           stripe_subscription_id: session.subscription,
           plan: session.metadata.plan || 'monthly',
           status: 'active',
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          ...getPeriodDates(subscription),
         }, { onConflict: 'stripe_subscription_id' });
         break;
       }
@@ -47,8 +60,7 @@ export default async function handler(req, res) {
         const subscription = event.data.object;
         await supabase.from('subscriptions').update({
           status: subscription.status,
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          ...getPeriodDates(subscription),
         }).eq('stripe_subscription_id', subscription.id);
         break;
       }
