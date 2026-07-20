@@ -32,7 +32,7 @@ export default async function handler(req, res) {
       case 'checkout.session.completed': {
         const session = event.data.object;
         const subscription = await stripe.subscriptions.retrieve(session.subscription);
-        await supabase.from('subscriptions').insert({
+        await supabase.from('subscriptions').upsert({
           user_id: session.metadata.user_id,
           stripe_customer_id: session.customer,
           stripe_subscription_id: session.subscription,
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
           status: 'active',
           current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
           current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-        });
+        }, { onConflict: 'stripe_subscription_id' });
         break;
       }
       case 'customer.subscription.updated': {

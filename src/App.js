@@ -9,7 +9,7 @@ const STRIPE_PRICES = {
 };
 
 export default function PDFHandwritingConverter() {
-  const { isSignedIn, user } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -51,9 +51,9 @@ export default function PDFHandwritingConverter() {
   }, []);
 
   // Fetch subscription status from your backend
- const fetchSubscriptionStatus = useCallback(async () => {
-    if (!isSignedIn || !user) return;
-    
+  const fetchSubscriptionStatus = useCallback(async () => {
+    if (!isLoaded || !isSignedIn || !user) return;
+
     try {
       const token = await getToken();
       const response = await fetch('/api/subscription/status', {
@@ -76,7 +76,7 @@ export default function PDFHandwritingConverter() {
     } catch (error) {
       console.error('Error fetching subscription:', error);
     }
-  }, [isSignedIn, user, getToken]);
+  }, [isLoaded, isSignedIn, user, getToken]);
 
   useEffect(() => {
     fetchSubscriptionStatus();
@@ -90,14 +90,13 @@ export default function PDFHandwritingConverter() {
 
     setCheckoutLoading(true);
     try {
+      const token = await getToken();
       const response = await fetch('/api/stripe/create-portal-session', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          customerId: subscription.stripeCustomerId
-        })
+        }
       });
 
       if (!response.ok) throw new Error('Failed to create portal session');

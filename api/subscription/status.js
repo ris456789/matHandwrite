@@ -16,27 +16,22 @@ export default async function handler(req, res) {
     const session = await clerkClient.verifyToken(token);
     const clerkUserId = session.sub;
 
-    let { data: user, error: userError } = await supabase
+    const { data: user, error: userError } = await supabase
       .from('users')
+      .upsert({ clerk_user_id: clerkUserId }, { onConflict: 'clerk_user_id' })
       .select('id')
-      .eq('clerk_user_id', clerkUserId)
       .single();
 
-    if (userError && userError.code === 'PGRST116') {
-      const { data: newUser } = await supabase
-        .from('users')
-        .insert({ clerk_user_id: clerkUserId })
-        .select()
-        .single();
-      user = newUser;
-    }
+    if (userError) throw userError;
 
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'active')
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     const startOfMonth = new Date();
     startOfMonth.setDate(1);

@@ -21,23 +21,19 @@ export default async function handler(req, res) {
 
     const { priceId, successUrl, cancelUrl } = req.body;
 
-    let { data: user } = await supabase
+    const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id')
-      .eq('clerk_user_id', clerkUserId)
-      .single();
-
-    if (!user) {
-      const { data: newUser } = await supabase
-        .from('users')
-        .insert({ 
+      .upsert(
+        {
           clerk_user_id: clerkUserId,
           email: clerkUser.emailAddresses[0]?.emailAddress
-        })
-        .select()
-        .single();
-      user = newUser;
-    }
+        },
+        { onConflict: 'clerk_user_id' }
+      )
+      .select('id')
+      .single();
+
+    if (userError) throw userError;
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
