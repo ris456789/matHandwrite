@@ -8,17 +8,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// API version 2025-10-29.clover moved current_period_start/end off the
-// subscription object and onto its first item.
+// Newer Stripe API versions moved current_period_start/end off the
+// subscription object and onto its first item. The installed stripe npm
+// package pins the account to an older API version unless overridden, so
+// fall back to the subscription-level fields when the item doesn't have them.
 function getPeriodDates(subscription) {
   const item = subscription.items?.data?.[0];
+  const start = item?.current_period_start ?? subscription.current_period_start;
+  const end = item?.current_period_end ?? subscription.current_period_end;
   return {
-    current_period_start: item?.current_period_start
-      ? new Date(item.current_period_start * 1000).toISOString()
-      : null,
-    current_period_end: item?.current_period_end
-      ? new Date(item.current_period_end * 1000).toISOString()
-      : null,
+    current_period_start: start ? new Date(start * 1000).toISOString() : null,
+    current_period_end: end ? new Date(end * 1000).toISOString() : null,
   };
 }
 
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       case 'checkout.session.completed': {
         const session = event.data.object;
         const subscription = await stripe.subscriptions.retrieve(session.subscription);
-        await supabase.from('subscriptions').upsert({
+        const { error } = await supabase.from('subscriptions').upsert({
           user_id: session.metadata.user_id,
           stripe_customer_id: session.customer,
           stripe_subscription_id: session.subscription,
@@ -54,25 +54,29 @@ export default async function handler(req, res) {
           status: 'active',
           ...getPeriodDates(subscription),
         }, { onConflict: 'stripe_subscription_id' });
+        if (error) throw error;
         break;
       }
       case 'customer.subscription.updated': {
         const subscription = event.data.object;
-        await supabase.from('subscriptions').update({
+        const { error } = await supabase.from('subscriptions').update({
           status: subscription.status,
           ...getPeriodDates(subscription),
         }).eq('stripe_subscription_id', subscription.id);
+        if (error) throw error;
         break;
       }
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
-        await supabase.from('subscriptions').update({ status: 'canceled' })
+        const { error } = await supabase.from('subscriptions').update({ status: 'canceled' })
           .eq('stripe_subscription_id', subscription.id);
+        if (error) throw error;
         break;
       }
     }
     res.json({ received: true });
   } catch (error) {
+    console.error(`Webhook handler failed for event ${event.type} (${event.id}):`, error);
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 }
