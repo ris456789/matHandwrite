@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     const clerkUserId = session.sub;
     const clerkUser = await clerkClient.users.getUser(clerkUserId);
 
-    const { priceId, successUrl, cancelUrl } = req.body;
+    const { priceId, plan, successUrl, cancelUrl } = req.body;
 
     const { data: user, error: userError } = await supabase
       .from('users')
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
       cancel_url: cancelUrl,
       customer_email: clerkUser.emailAddresses[0]?.emailAddress,
       client_reference_id: user.id,
-      metadata: { clerk_user_id: clerkUserId, user_id: user.id },
+      metadata: { clerk_user_id: clerkUserId, user_id: user.id, plan },
     });
 
     res.status(200).json({ url: checkoutSession.url });
