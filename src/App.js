@@ -17,7 +17,11 @@ const HANDWRITING_STYLES = {
   cute: { fontSize: 50, lineHeight: 72, slant: -0.02, fontFamily: "'Shadows Into Light', cursive", wobble: 2.5, letterSpacing: 1, italic: false },
   signature: { fontSize: 52, lineHeight: 78, slant: 0.08, fontFamily: "'Dancing Script', cursive", wobble: 2, letterSpacing: 1, italic: false },
   flashcard: { fontSize: 38, lineHeight: 55, slant: 0, fontFamily: "'Patrick Hand', cursive", wobble: 1, letterSpacing: 1, italic: false },
-  cursive: { fontSize: 48, lineHeight: 70, slant: 0.04, fontFamily: "'Homemade Apple', cursive", wobble: 1.5, letterSpacing: 0.5, italic: false }
+  cursive: { fontSize: 48, lineHeight: 70, slant: 0.04, fontFamily: "'Homemade Apple', cursive", wobble: 1.5, letterSpacing: 0.5, italic: false },
+  print: { fontSize: 44, lineHeight: 62, slant: 0, fontFamily: "'Indie Flower', cursive", wobble: 2, letterSpacing: 1, italic: false },
+  bold: { fontSize: 40, lineHeight: 58, slant: 0, fontFamily: "'Permanent Marker', cursive", wobble: 1, letterSpacing: 1, italic: false },
+  neat: { fontSize: 40, lineHeight: 58, slant: 0, fontFamily: "'Architects Daughter', cursive", wobble: 0.8, letterSpacing: 1, italic: false },
+  elegant: { fontSize: 50, lineHeight: 74, slant: 0.06, fontFamily: "'Yellowtail', cursive", wobble: 1.5, letterSpacing: 1, italic: false }
 };
 
 export default function PDFHandwritingConverter() {
@@ -79,7 +83,7 @@ export default function PDFHandwritingConverter() {
     // Load real handwriting fonts (Google Fonts) for authentic-looking output
     const fontsCss = document.createElement('link');
     fontsCss.rel = 'stylesheet';
-    fontsCss.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Kalam:wght@400;700&family=Patrick+Hand&family=Shadows+Into+Light&family=Dancing+Script:wght@400;700&family=Homemade+Apple&display=swap';
+    fontsCss.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Kalam:wght@400;700&family=Patrick+Hand&family=Shadows+Into+Light&family=Dancing+Script:wght@400;700&family=Homemade+Apple&family=Indie+Flower&family=Permanent+Marker&family=Architects+Daughter&family=Yellowtail&display=swap';
     document.head.appendChild(fontsCss);
 
     return () => {
@@ -223,9 +227,13 @@ export default function PDFHandwritingConverter() {
     }
   };
 
-  // Download as PDF
-  const downloadAsPDF = async (filename = 'handwritten-document') => {
-    if (!jsPdfLoaded || pages.length === 0) {
+  // Download as PDF. Accepts an explicit pagesOverride array so callers that
+  // just finished an async conversion loop (e.g. applyToAll) can pass the
+  // freshly-built page list instead of relying on the `pages` closure, which
+  // can still be the pre-conversion snapshot at the point they call this.
+  const downloadAsPDF = async (filename = 'handwritten-document', pagesOverride = null) => {
+    const sourcePages = pagesOverride || pages;
+    if (!jsPdfLoaded || sourcePages.length === 0) {
       alert('PDF library not loaded or no pages to download');
       return;
     }
@@ -235,37 +243,37 @@ export default function PDFHandwritingConverter() {
 
     try {
       const { jsPDF } = window.jspdf;
-      
+
       // Get first page dimensions to set PDF size
-      const firstPage = pages[0];
+      const firstPage = sourcePages[0];
       const aspectRatio = firstPage.width / firstPage.height;
-      
+
       // A4 dimensions in mm
       const pdfWidth = 210;
       const pdfHeight = pdfWidth / aspectRatio;
-      
+
       const pdf = new jsPDF({
         orientation: firstPage.width > firstPage.height ? 'landscape' : 'portrait',
         unit: 'mm',
         format: [pdfWidth, pdfHeight]
       });
 
-      for (let i = 0; i < pages.length; i++) {
-        setLoadingMessage(`Adding page ${i + 1} of ${pages.length}...`);
-        
-        const page = pages[i];
+      for (let i = 0; i < sourcePages.length; i++) {
+        setLoadingMessage(`Adding page ${i + 1} of ${sourcePages.length}...`);
+
+        const page = sourcePages[i];
         const imgData = page.handwritten || page.aiRendered || page.original;
-        
+
         if (i > 0) {
           const pageAspect = page.width / page.height;
           const pageWidth = 210;
           const pageHeight = pageWidth / pageAspect;
           pdf.addPage([pageWidth, pageHeight], page.width > page.height ? 'landscape' : 'portrait');
         }
-        
+
         const currentPageWidth = pdf.internal.pageSize.getWidth();
         const currentPageHeight = pdf.internal.pageSize.getHeight();
-        
+
         pdf.addImage(imgData, 'PNG', 0, 0, currentPageWidth, currentPageHeight, undefined, 'FAST');
       }
 
@@ -945,15 +953,22 @@ export default function PDFHandwritingConverter() {
             }
           }
           ctx.globalAlpha = 1;
-          
-          const newPages = [...pages];
-          newPages[pageIndex].handwritten = canvas.toDataURL('image/png');
-          setPages(newPages);
 
-          resolve(true);
+          const dataUrl = canvas.toDataURL('image/png');
+          // Functional update - a loop over many pages (applyToAll) calls this
+          // repeatedly while awaiting each one, and a plain `[...pages]` read
+          // from the closure would still see the pre-loop snapshot each time,
+          // silently discarding every page's result except the last.
+          setPages((prevPages) => {
+            const updated = [...prevPages];
+            updated[pageIndex] = { ...updated[pageIndex], handwritten: dataUrl };
+            return updated;
+          });
+
+          resolve(dataUrl);
         } catch (error) {
           alert('❌ Error processing image: ' + error.message);
-          resolve(false);
+          resolve(null);
         }
       };
 
@@ -966,12 +981,20 @@ export default function PDFHandwritingConverter() {
   // local, repeatable re-styling pass, so it isn't gated behind canConvert().
   const applyToAll = async () => {
     setLoading(true);
+    // Track results locally instead of reading the `pages` state closure -
+    // it won't reflect this loop's own updates until React re-renders, so a
+    // read at the end would still see the pre-conversion snapshot.
+    const converted = [...pages];
     for (let i = 0; i < pages.length; i++) {
       setLoadingMessage(`Converting page ${i + 1} of ${pages.length}...`);
-      await applyMathHandwriting(i);
+      const dataUrl = await applyMathHandwriting(i);
+      if (dataUrl) {
+        converted[i] = { ...converted[i], handwritten: dataUrl };
+      }
     }
     setLoading(false);
     setLoadingMessage('');
+    await downloadAsPDF('handwritten-document', converted);
   };
 
   const handleApplyStrokesClick = async (pageIndex) => {
@@ -1222,6 +1245,10 @@ export default function PDFHandwritingConverter() {
                   <option value="signature">✒️ Signature Style (Elegant & Slanted)</option>
                   <option value="flashcard">🗂️ Flashcard Mode (Compact & Clear)</option>
                   <option value="cursive">🖋️ Cursive (Flowing & Connected)</option>
+                  <option value="print">✏️ Casual Print (Relaxed)</option>
+                  <option value="bold">🖊️ Bold Marker (Thick & Punchy)</option>
+                  <option value="neat">📐 Neat & Technical (Precise)</option>
+                  <option value="elegant">🌸 Elegant Script (Flowing Calligraphy)</option>
                 </select>
               </div>
 
@@ -1303,6 +1330,10 @@ export default function PDFHandwritingConverter() {
                   <option value="signature">✒️ Signature (Elegant & Slanted)</option>
                   <option value="flashcard">🗂️ Flashcard (Compact & Clear)</option>
                   <option value="cursive">🖋️ Cursive (Flowing)</option>
+                  <option value="print">✏️ Casual Print (Relaxed)</option>
+                  <option value="bold">🖊️ Bold Marker (Thick & Punchy)</option>
+                  <option value="neat">📐 Neat & Technical (Precise)</option>
+                  <option value="elegant">🌸 Elegant Script (Flowing Calligraphy)</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-2">Applies to PDF uploads - the AI transcribes the page, then typesets it in this style.</p>
               </div>
@@ -1379,9 +1410,9 @@ export default function PDFHandwritingConverter() {
                 <span>📝</span>
                 Switch to Text Mode
               </button>
-              <button onClick={applyToAll} disabled={loading} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+              <button onClick={applyToAll} disabled={loading || !jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
                 <span>✨</span>
-                Convert All Pages
+                Convert All & Download PDF
               </button>
               <button onClick={() => downloadAsPDF('handwritten-document')} disabled={loading || !jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20 ml-auto disabled:opacity-50">
                 <span>📄</span>
