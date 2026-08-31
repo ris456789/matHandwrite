@@ -439,7 +439,11 @@ export default function PDFHandwritingConverter() {
   // layout via html2canvas. This becomes the "ink source" that the existing
   // paper/wobble effect (applyMathHandwriting) draws over, instead of it
   // re-inking the original PDF's digital font.
-  const renderLatexPageToImage = async (latexText, targetWidth, styleKey) => {
+  // Renders the transcribed text+LaTeX into one tall image, then slices it
+  // into page-sized chunks (targetHeight) so a dense source page that needs
+  // more room in handwriting than in print spills onto extra pages instead
+  // of being squeezed or clipped into a single oversized image.
+  const renderLatexPageToImage = async (latexText, targetWidth, targetHeight, styleKey) => {
     if (!window.katex || !window.html2canvas) {
       throw new Error('Handwriting renderer not loaded yet');
     }
@@ -468,7 +472,10 @@ export default function PDFHandwritingConverter() {
     }
 
     const container = document.createElement('div');
-    container.style.position = 'fixed';
+    // position: absolute (not fixed) - html2canvas can misplace/clip
+    // fixed-positioned elements that sit outside the viewport, which was
+    // silently cutting off long transcriptions instead of capturing them.
+    container.style.position = 'absolute';
     container.style.left = '-99999px';
     container.style.top = '0';
     container.style.width = `${cssWidth}px`;
@@ -507,15 +514,52 @@ export default function PDFHandwritingConverter() {
 
     try {
       await document.fonts.ready;
+      // Measure the actual full content height and pass it explicitly -
+      // without this, html2canvas guesses a viewport-sized height and
+      // silently truncates anything taller than that.
+      const fullHeight = Math.ceil(container.scrollHeight);
+      const scale = targetWidth / cssWidth;
       const renderedCanvas = await window.html2canvas(container, {
         backgroundColor: null,
-        scale: targetWidth / cssWidth
+        scale,
+        width: cssWidth,
+        height: fullHeight,
+        windowWidth: cssWidth,
+        windowHeight: fullHeight
       });
-      return {
-        dataUrl: renderedCanvas.toDataURL('image/png'),
-        width: renderedCanvas.width,
-        height: renderedCanvas.height
-      };
+
+      // If the transcribed content fits within one normal page height,
+      // return it as-is. Otherwise slice it into page-sized chunks so long
+      // pages spill onto extra sheets instead of rendering as one giant image.
+      if (renderedCanvas.height <= targetHeight * 1.05) {
+        return [{
+          dataUrl: renderedCanvas.toDataURL('image/png'),
+          width: renderedCanvas.width,
+          height: renderedCanvas.height
+        }];
+      }
+
+      const slices = [];
+      let offsetY = 0;
+      while (offsetY < renderedCanvas.height) {
+        const sliceHeight = Math.min(targetHeight, renderedCanvas.height - offsetY);
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = renderedCanvas.width;
+        sliceCanvas.height = sliceHeight;
+        const sliceCtx = sliceCanvas.getContext('2d');
+        sliceCtx.drawImage(
+          renderedCanvas,
+          0, offsetY, renderedCanvas.width, sliceHeight,
+          0, 0, renderedCanvas.width, sliceHeight
+        );
+        slices.push({
+          dataUrl: sliceCanvas.toDataURL('image/png'),
+          width: sliceCanvas.width,
+          height: sliceCanvas.height
+        });
+        offsetY += sliceHeight;
+      }
+      return slices;
     } finally {
       document.body.removeChild(container);
     }
@@ -553,31 +597,40 @@ export default function PDFHandwritingConverter() {
         await page.render({ canvasContext: ctx, viewport }).promise;
         const original = canvas.toDataURL('image/png');
 
-        let aiRendered = null;
-        let width = viewport.width;
-        let height = viewport.height;
-
+        let rendered = null;
         try {
           setLoadingMessage(`Reading page ${i} of ${pagesToProcess} with AI...`);
           const latexText = await transcribePageToLatex(original);
           if (latexText.trim()) {
             setLoadingMessage(`Typesetting page ${i} of ${pagesToProcess}...`);
-            const rendered = await renderLatexPageToImage(latexText, viewport.width, mathHandwritingStyle);
-            aiRendered = rendered.dataUrl;
-            width = rendered.width;
-            height = rendered.height;
+            rendered = await renderLatexPageToImage(latexText, viewport.width, viewport.height, mathHandwritingStyle);
           }
         } catch (err) {
           console.error(`AI transcription failed for page ${i}:`, err);
         }
 
-        loadedPages.push({
-          original,
-          aiRendered,
-          handwritten: null,
-          width,
-          height
-        });
+        if (rendered && rendered.length > 0) {
+          // A source page's transcription may need more than one handwritten
+          // page - push each slice as its own page, all falling back to the
+          // same original scan if the ink effect needs it.
+          rendered.forEach((slice) => {
+            loadedPages.push({
+              original,
+              aiRendered: slice.dataUrl,
+              handwritten: null,
+              width: slice.width,
+              height: slice.height
+            });
+          });
+        } else {
+          loadedPages.push({
+            original,
+            aiRendered: null,
+            handwritten: null,
+            width: viewport.width,
+            height: viewport.height
+          });
+        }
       }
       setPages(loadedPages);
       incrementConversions();
