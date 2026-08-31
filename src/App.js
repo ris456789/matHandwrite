@@ -8,6 +8,18 @@ const STRIPE_PRICES = {
   annual: 'price_1SZUwYBNLr4e4J9pu7PYs5BW'
 };
 
+// Real handwriting webfonts (loaded via Google Fonts) instead of generic system
+// fonts like Comic Sans/Brush Script MT, which don't exist on most platforms and
+// silently fall back to a plain sans-serif - shared by Text Mode and Math Mode.
+const HANDWRITING_STYLES = {
+  text: { fontSize: 42, lineHeight: 60, slant: 0, fontFamily: "'Patrick Hand', cursive", wobble: 1.5, letterSpacing: 1, italic: false },
+  journal: { fontSize: 46, lineHeight: 66, slant: 0.02, fontFamily: "'Kalam', cursive", wobble: 3, letterSpacing: 1, italic: false },
+  cute: { fontSize: 50, lineHeight: 72, slant: -0.02, fontFamily: "'Shadows Into Light', cursive", wobble: 2.5, letterSpacing: 1, italic: false },
+  signature: { fontSize: 52, lineHeight: 78, slant: 0.08, fontFamily: "'Dancing Script', cursive", wobble: 2, letterSpacing: 1, italic: false },
+  flashcard: { fontSize: 38, lineHeight: 55, slant: 0, fontFamily: "'Patrick Hand', cursive", wobble: 1, letterSpacing: 1, italic: false },
+  cursive: { fontSize: 48, lineHeight: 70, slant: 0.04, fontFamily: "'Homemade Apple', cursive", wobble: 1.5, letterSpacing: 0.5, italic: false }
+};
+
 export default function PDFHandwritingConverter() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
@@ -26,13 +38,16 @@ export default function PDFHandwritingConverter() {
   const [conversionsUsed, setConversionsUsed] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [mathHandwritingStyle, setMathHandwritingStyle] = useState('journal');
+  const [katexLoaded, setKatexLoaded] = useState(false);
+  const [html2canvasLoaded, setHtml2canvasLoaded] = useState(false);
 
   // Load PDF.js
   useEffect(() => {
     const pdfScript = document.createElement('script');
     pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
     pdfScript.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       setPdfLibLoaded(true);
     };
@@ -44,9 +59,36 @@ export default function PDFHandwritingConverter() {
     jsPdfScript.onload = () => setJsPdfLoaded(true);
     document.body.appendChild(jsPdfScript);
 
+    // Load KaTeX for rendering transcribed LaTeX math
+    const katexCss = document.createElement('link');
+    katexCss.rel = 'stylesheet';
+    katexCss.href = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css';
+    document.head.appendChild(katexCss);
+
+    const katexScript = document.createElement('script');
+    katexScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js';
+    katexScript.onload = () => setKatexLoaded(true);
+    document.body.appendChild(katexScript);
+
+    // Load html2canvas to rasterize the handwritten-font + KaTeX layout
+    const html2canvasScript = document.createElement('script');
+    html2canvasScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    html2canvasScript.onload = () => setHtml2canvasLoaded(true);
+    document.body.appendChild(html2canvasScript);
+
+    // Load real handwriting fonts (Google Fonts) for authentic-looking output
+    const fontsCss = document.createElement('link');
+    fontsCss.rel = 'stylesheet';
+    fontsCss.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Kalam:wght@400;700&family=Patrick+Hand&family=Shadows+Into+Light&family=Dancing+Script:wght@400;700&family=Homemade+Apple&display=swap';
+    document.head.appendChild(fontsCss);
+
     return () => {
       document.body.removeChild(pdfScript);
       document.body.removeChild(jsPdfScript);
+      document.head.removeChild(katexCss);
+      document.body.removeChild(katexScript);
+      document.body.removeChild(html2canvasScript);
+      document.head.removeChild(fontsCss);
     };
   }, []);
 
@@ -212,7 +254,7 @@ export default function PDFHandwritingConverter() {
         setLoadingMessage(`Adding page ${i + 1} of ${pages.length}...`);
         
         const page = pages[i];
-        const imgData = page.handwritten || page.original;
+        const imgData = page.handwritten || page.aiRendered || page.original;
         
         if (i > 0) {
           const pageAspect = page.width / page.height;
@@ -257,7 +299,7 @@ export default function PDFHandwritingConverter() {
       format: [pdfWidth, pdfHeight]
     });
 
-    const imgData = page.handwritten || page.original;
+    const imgData = page.handwritten || page.aiRendered || page.original;
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
     pdf.save(`handwritten-page-${pageIndex + 1}.pdf`);
   };
@@ -370,22 +412,136 @@ export default function PDFHandwritingConverter() {
     e.target.value = '';
   };
 
+  // Sends one rendered page image to the backend, which asks Claude to
+  // transcribe everything on the page - prose and math alike - into plain
+  // text with LaTeX math delimiters ($...$ / $$...$$).
+  const transcribePageToLatex = async (pageDataUrl) => {
+    const token = await getToken();
+    const response = await fetch('/api/convert/page-to-latex', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ imageBase64: pageDataUrl.split(',')[1] })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Transcription failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    return data.text || '';
+  };
+
+  // Renders transcribed text+LaTeX into a clean image using KaTeX (for real
+  // math typesetting) and a genuine handwriting webfont, then rasterizes that
+  // layout via html2canvas. This becomes the "ink source" that the existing
+  // paper/wobble effect (applyMathHandwriting) draws over, instead of it
+  // re-inking the original PDF's digital font.
+  const renderLatexPageToImage = async (latexText, targetWidth, styleKey) => {
+    if (!window.katex || !window.html2canvas) {
+      throw new Error('Handwriting renderer not loaded yet');
+    }
+
+    const style = HANDWRITING_STYLES[styleKey];
+    const cssWidth = Math.max(300, Math.round(targetWidth / 2.5));
+
+    const segments = [];
+    const mathRegex = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = mathRegex.exec(latexText)) !== null) {
+      if (match.index > lastIndex) {
+        segments.push({ type: 'text', value: latexText.slice(lastIndex, match.index) });
+      }
+      segments.push(match[1] !== undefined
+        ? { type: 'display', value: match[1] }
+        : { type: 'inline', value: match[2] });
+      lastIndex = mathRegex.lastIndex;
+    }
+    if (lastIndex < latexText.length) {
+      segments.push({ type: 'text', value: latexText.slice(lastIndex) });
+    }
+    if (segments.length === 0) {
+      segments.push({ type: 'text', value: latexText });
+    }
+
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-99999px';
+    container.style.top = '0';
+    container.style.width = `${cssWidth}px`;
+    container.style.padding = '48px';
+    container.style.boxSizing = 'border-box';
+    container.style.background = 'transparent';
+    container.style.color = penColor;
+    container.style.fontFamily = style.fontFamily;
+    container.style.fontSize = `${style.fontSize * 0.55}px`;
+    container.style.lineHeight = `${style.lineHeight * 0.55}px`;
+    container.style.whiteSpace = 'pre-wrap';
+    container.style.wordBreak = 'break-word';
+
+    segments.forEach((seg) => {
+      if (seg.type === 'text') {
+        const span = document.createElement('span');
+        span.textContent = seg.value;
+        container.appendChild(span);
+      } else {
+        const span = document.createElement('span');
+        span.style.display = seg.type === 'display' ? 'block' : 'inline-block';
+        span.style.margin = seg.type === 'display' ? '10px 0' : '0 2px';
+        try {
+          span.innerHTML = window.katex.renderToString(seg.value, {
+            throwOnError: false,
+            displayMode: seg.type === 'display'
+          });
+        } catch (e) {
+          span.textContent = seg.value;
+        }
+        container.appendChild(span);
+      }
+    });
+
+    document.body.appendChild(container);
+
+    try {
+      await document.fonts.ready;
+      const renderedCanvas = await window.html2canvas(container, {
+        backgroundColor: null,
+        scale: targetWidth / cssWidth
+      });
+      return {
+        dataUrl: renderedCanvas.toDataURL('image/png'),
+        width: renderedCanvas.width,
+        height: renderedCanvas.height
+      };
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
   const handlePDFUpload = async (file) => {
+    if (!canConvert()) {
+      setShowPaywall(true);
+      return;
+    }
+
     setLoading(true);
     setLoadingMessage('Reading PDF...');
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      
+
       if (pdf.numPages > 50) {
         alert(`⚠️ PDF has ${pdf.numPages} pages. Only the first 50 will be processed.`);
       }
-      
+
       const loadedPages = [];
       const pagesToProcess = Math.min(pdf.numPages, 50);
-      
+
       for (let i = 1; i <= pagesToProcess; i++) {
-        setLoadingMessage(`Processing page ${i} of ${pagesToProcess}...`);
+        setLoadingMessage(`Rendering page ${i} of ${pagesToProcess}...`);
         const page = await pdf.getPage(i);
         const viewport = page.getViewport({ scale: 2.5 });
         const canvas = document.createElement('canvas');
@@ -395,15 +551,36 @@ export default function PDFHandwritingConverter() {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvasContext: ctx, viewport }).promise;
-        
+        const original = canvas.toDataURL('image/png');
+
+        let aiRendered = null;
+        let width = viewport.width;
+        let height = viewport.height;
+
+        try {
+          setLoadingMessage(`Reading page ${i} of ${pagesToProcess} with AI...`);
+          const latexText = await transcribePageToLatex(original);
+          if (latexText.trim()) {
+            setLoadingMessage(`Typesetting page ${i} of ${pagesToProcess}...`);
+            const rendered = await renderLatexPageToImage(latexText, viewport.width, mathHandwritingStyle);
+            aiRendered = rendered.dataUrl;
+            width = rendered.width;
+            height = rendered.height;
+          }
+        } catch (err) {
+          console.error(`AI transcription failed for page ${i}:`, err);
+        }
+
         loadedPages.push({
-          original: canvas.toDataURL('image/png'),
+          original,
+          aiRendered,
           handwritten: null,
-          width: viewport.width,
-          height: viewport.height
+          width,
+          height
         });
       }
       setPages(loadedPages);
+      incrementConversions();
     } catch (error) {
       alert('❌ Error loading PDF: ' + error.message);
     }
@@ -537,7 +714,7 @@ export default function PDFHandwritingConverter() {
     }
   };
 
-  const convertTextToHandwriting = () => {
+  const convertTextToHandwriting = async () => {
     if (!canConvert()) {
       setShowPaywall(true);
       return;
@@ -549,7 +726,7 @@ export default function PDFHandwritingConverter() {
     }
 
     const charCount = textInput.length;
-    
+
     if (charCount > 15000) {
       if (!window.confirm(`⚠️ Your text is ${charCount.toLocaleString()} characters. Most content will be cut off! Continue anyway?`)) {
         return;
@@ -560,20 +737,17 @@ export default function PDFHandwritingConverter() {
     canvas.width = 2100;
     canvas.height = 2970;
     const ctx = canvas.getContext('2d');
-    
+
     createPaperTexture(ctx, canvas.width, canvas.height, paperType);
-    
-    const styleConfig = {
-      text: { fontSize: 42, lineHeight: 60, slant: 0, fontFamily: 'Arial, sans-serif', wobble: 1.5, letterSpacing: 1, italic: false },
-      journal: { fontSize: 48, lineHeight: 70, slant: 0.03, fontFamily: 'Georgia, serif', wobble: 3, letterSpacing: 1.5, italic: false },
-      cute: { fontSize: 52, lineHeight: 75, slant: -0.03, fontFamily: 'Comic Sans MS, cursive', wobble: 2.5, letterSpacing: 1, italic: true },
-      signature: { fontSize: 55, lineHeight: 80, slant: 0.15, fontFamily: 'Georgia, serif', wobble: 4, letterSpacing: 2, italic: true },
-      flashcard: { fontSize: 38, lineHeight: 55, slant: 0, fontFamily: 'Arial, sans-serif', wobble: 1, letterSpacing: 1, italic: false },
-      cursive: { fontSize: 50, lineHeight: 72, slant: 0.12, fontFamily: 'Brush Script MT, cursive', wobble: 2, letterSpacing: 2.5, italic: true }
-    };
-    
-    const { fontSize, lineHeight, slant, fontFamily, wobble, letterSpacing, italic } = styleConfig[textMode];
-    
+
+    const { fontSize, lineHeight, slant, fontFamily, wobble, letterSpacing, italic } = HANDWRITING_STYLES[textMode];
+
+    // Make sure the webfont is actually loaded before drawing - otherwise the
+    // canvas silently falls back to a generic sans-serif on first use.
+    try {
+      await document.fonts.load(`${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`);
+    } catch (e) { /* font API not supported - fall back to default rendering */ }
+
     ctx.font = `${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`;
     ctx.textBaseline = 'top';
     
@@ -614,12 +788,7 @@ export default function PDFHandwritingConverter() {
     incrementConversions();
   };
 
-  const applyMathHandwriting = (pageIndex, skipConversionCheck = false) => {
-    if (!skipConversionCheck && !canConvert()) {
-      setShowPaywall(true);
-      return Promise.resolve(false);
-    }
-    
+  const applyMathHandwriting = (pageIndex) => {
     return new Promise((resolve) => {
       const page = pages[pageIndex];
       if (!page || !page.original) {
@@ -627,13 +796,13 @@ export default function PDFHandwritingConverter() {
         resolve(false);
         return;
       }
-      
+
       const img = new Image();
       img.onerror = () => {
         alert('❌ Error loading image.');
         resolve(false);
       };
-      
+
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -642,7 +811,10 @@ export default function PDFHandwritingConverter() {
           const ctx = canvas.getContext('2d');
           createPaperTexture(ctx, canvas.width, canvas.height, paperType);
           ctx.globalCompositeOperation = 'multiply';
-          ctx.drawImage(img, 0, 0);
+          // Scale-to-fit: the AI-rendered source (page.aiRendered) is rasterized
+          // at its own natural content size, which may not exactly match
+          // page.width/page.height, so draw it stretched to the target canvas.
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           ctx.globalCompositeOperation = 'source-over';
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
@@ -724,43 +896,35 @@ export default function PDFHandwritingConverter() {
           const newPages = [...pages];
           newPages[pageIndex].handwritten = canvas.toDataURL('image/png');
           setPages(newPages);
-          
-          if (!skipConversionCheck) {
-            incrementConversions();
-          }
-          
+
           resolve(true);
         } catch (error) {
           alert('❌ Error processing image: ' + error.message);
           resolve(false);
         }
       };
-      
-      img.src = page.original;
+
+      img.src = page.aiRendered || page.original;
     });
   };
 
+  // The paid step is the AI transcription done at upload time (see
+  // handlePDFUpload) - re-applying the ink/paper effect afterward is a free,
+  // local, repeatable re-styling pass, so it isn't gated behind canConvert().
   const applyToAll = async () => {
-    if (!canConvert()) {
-      setShowPaywall(true);
-      return;
-    }
-    
     setLoading(true);
     for (let i = 0; i < pages.length; i++) {
       setLoadingMessage(`Converting page ${i + 1} of ${pages.length}...`);
-      await applyMathHandwriting(i, true);
+      await applyMathHandwriting(i);
     }
     setLoading(false);
     setLoadingMessage('');
-    
-    incrementConversions();
   };
 
   const handleApplyStrokesClick = async (pageIndex) => {
     setLoading(true);
     setLoadingMessage(`Processing page ${pageIndex + 1}...`);
-    await applyMathHandwriting(pageIndex, false);
+    await applyMathHandwriting(pageIndex);
     setLoading(false);
     setLoadingMessage('');
   };
@@ -870,7 +1034,7 @@ export default function PDFHandwritingConverter() {
                     <span className="text-6xl">🧮</span>
                   </div>
                   <h2 className="text-3xl font-bold mb-4">Math Mode</h2>
-                  <p className="text-gray-400 text-lg mb-4">Upload PDFs or images with equations, formulas, and mathematical notation. Pixel-perfect preservation.</p>
+                  <p className="text-gray-400 text-lg mb-4">Upload PDFs with equations, formulas, and mathematical notation. AI reads every page, rebuilds it in LaTeX, and typesets it by hand.</p>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
                     <span>✓</span>
                     No LaTeX Required - Just Upload PDF
@@ -898,7 +1062,7 @@ export default function PDFHandwritingConverter() {
             <div className="flex items-center justify-center gap-8 pt-4 text-sm text-gray-400">
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
-                <span>100% Private - Client-side Processing</span>
+                <span>AI-Powered LaTeX Transcription</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
@@ -909,15 +1073,15 @@ export default function PDFHandwritingConverter() {
             <section className="pt-20 border-t border-gray-800">
               <div className="max-w-4xl mx-auto">
                 <h2 className="text-4xl font-bold text-center mb-4">Transform Your Digital Math Notes Into Authentic Handwriting</h2>
-                <p className="text-center text-gray-400 text-lg mb-12">The only tool that converts typed math PDFs and digital documents into handwritten-looking pages while preserving every formula, graph, and equation perfectly</p>
-                
+                <p className="text-center text-gray-400 text-lg mb-12">The only tool that reads your typed math PDFs with AI, rebuilds every formula in LaTeX, and typesets the whole page in genuine handwriting</p>
+
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 border border-blue-500/20 rounded-2xl p-8 hover:border-blue-500/40 transition-all">
                     <div className="flex items-center gap-3 mb-4">
                       <span className="text-3xl">📐</span>
-                      <h3 className="text-2xl font-bold">Preserve Every Detail</h3>
+                      <h3 className="text-2xl font-bold">AI-Read, LaTeX-Typeset</h3>
                     </div>
-                    <p className="text-gray-300 mb-4">Unlike other tools, we maintain your mathematical content exactly as it is. No loss of quality, no simplified equations.</p>
+                    <p className="text-gray-300 mb-4">Claude reads your whole document and transcribes it into LaTeX, so equations are properly typeset - not just re-inked pixels.</p>
                     <ul className="space-y-2 text-sm text-gray-400">
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Complex formulas stay intact</li>
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Graphs and diagrams preserved perfectly</li>
@@ -942,9 +1106,9 @@ export default function PDFHandwritingConverter() {
                 <div className="mt-8 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-8">
                   <div className="grid md:grid-cols-3 gap-6">
                     <div className="text-center">
-                      <p className="text-4xl font-bold text-blue-400 mb-2">0%</p>
-                      <p className="text-gray-300">Information Loss</p>
-                      <p className="text-sm text-gray-500 mt-1">Every detail preserved</p>
+                      <p className="text-4xl font-bold text-blue-400 mb-2">AI</p>
+                      <p className="text-gray-300">Full-Page Transcription</p>
+                      <p className="text-sm text-gray-500 mt-1">Reads text and math together</p>
                     </div>
                     <div className="text-center">
                       <p className="text-4xl font-bold text-purple-400 mb-2">100%</p>
@@ -1077,6 +1241,18 @@ export default function PDFHandwritingConverter() {
                 </div>
                 <p className="text-gray-400 text-sm">Perfect for typed notes, scanned homework, or any document with math equations</p>
               </div>
+              <div className="max-w-md mx-auto text-left">
+                <label className="block text-sm font-medium text-gray-300 mb-2">✍️ Handwriting Style</label>
+                <select value={mathHandwritingStyle} onChange={(e) => setMathHandwritingStyle(e.target.value)} className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-white">
+                  <option value="text">📝 Clean & Readable</option>
+                  <option value="journal">📔 Journal (Natural & Casual)</option>
+                  <option value="cute">💕 Cute Aesthetic (Bubbly)</option>
+                  <option value="signature">✒️ Signature (Elegant & Slanted)</option>
+                  <option value="flashcard">🗂️ Flashcard (Compact & Clear)</option>
+                  <option value="cursive">🖋️ Cursive (Flowing)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-2">Applies to PDF uploads - the AI transcribes the page, then typesets it in this style.</p>
+              </div>
               <div className="border-4 border-dashed border-gray-600 rounded-3xl p-16 hover:border-blue-500 transition-all">
                 <label className="cursor-pointer block">
                   <div className="space-y-4">
@@ -1087,7 +1263,7 @@ export default function PDFHandwritingConverter() {
                       Choose File
                     </div>
                   </div>
-                  <input type="file" accept="application/pdf,text/*,image/*" onChange={handleFileUpload} disabled={!pdfLibLoaded || loading} className="hidden" />
+                  <input type="file" accept="application/pdf,text/*,image/*" onChange={handleFileUpload} disabled={!pdfLibLoaded || !katexLoaded || !html2canvasLoaded || loading} className="hidden" />
                 </label>
               </div>
             </div>
@@ -1201,7 +1377,7 @@ export default function PDFHandwritingConverter() {
                   </div>
                 </div>
                 <div className="border-2 border-gray-700 rounded-xl overflow-hidden bg-gray-900">
-                  <img src={page.handwritten || page.original} alt={`Page ${index + 1}`} className="w-full" />
+                  <img src={page.handwritten || page.aiRendered || page.original} alt={`Page ${index + 1}`} className="w-full" />
                 </div>
               </div>
             ))}
