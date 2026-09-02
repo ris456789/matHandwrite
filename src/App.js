@@ -1212,7 +1212,7 @@ export default function PDFHandwritingConverter() {
                       <span className="text-3xl">📐</span>
                       <h3 className="text-2xl font-bold">AI-Read, LaTeX-Typeset</h3>
                     </div>
-                    <p className="text-gray-300 mb-4">Claude reads your whole document and transcribes it into LaTeX, so equations are properly typeset - not just re-inked pixels.</p>
+                    <p className="text-gray-300 mb-4">AI reads your whole document and transcribes it into LaTeX, so equations are properly typeset - not just re-inked pixels.</p>
                     <ul className="space-y-2 text-sm text-gray-400">
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Complex formulas stay intact</li>
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Graphs and diagrams preserved perfectly</li>
@@ -1281,7 +1281,7 @@ export default function PDFHandwritingConverter() {
                     { icon: '📐', title: 'Preserves All Math Content', body: 'Unlike font-based converters that fail with equations, MatHandWrite applies handwriting effects directly to your document. Every integral, matrix, and formula stays exactly as you created it.' },
                     { icon: '✍️', title: 'Genuinely Realistic Results', body: 'Natural variations in stroke width, ink pressure, letter spacing, and positioning mimic real handwriting, not computer-generated fonts.' },
                     { icon: '🔒', title: '100% Private & Secure', body: 'All processing happens in your browser. Your PDFs and documents are never uploaded to any server - your academic work stays private.' },
-                    { icon: '⚡', title: 'Fast, AI-Powered Conversion', body: 'Claude reads and transcribes every page in seconds. Handle up to 50 pages per PDF and download a ready-to-print handwritten document.' },
+                    { icon: '⚡', title: 'Fast, AI-Powered Conversion', body: 'AI reads and transcribes every page in seconds. Handle up to 50 pages per PDF and download a ready-to-print handwritten document.' },
                     { icon: '📄', title: 'Multiple Paper Styles', body: 'Choose plain white, lined notebook paper with red margins, or aged parchment texture for an authentic look.' },
                     { icon: '🎨', title: 'Customizable Appearance', body: 'Pick any pen color, adjust stroke intensity, and control natural variation to match your personal handwriting style.' }
                   ].map((f) => (
@@ -1324,7 +1324,7 @@ export default function PDFHandwritingConverter() {
                 <div className="divide-y divide-gray-800">
                   {[
                     ['How do I convert math equations to handwriting?', "Upload your math PDF or image to MatHandWrite's Math Mode. The tool applies realistic handwriting effects while preserving all equations, formulas, and mathematical notation exactly as written. No LaTeX knowledge required."],
-                    ['Is MatHandWrite free to use?', 'Yes, MatHandWrite offers a free trial conversion. For unlimited conversions, affordable weekly, monthly, and annual subscription plans are available.'],
+                    ['How much does MatHandWrite cost?', 'MatHandWrite offers affordable weekly, monthly, and annual subscription plans.'],
                     ['Does the converter work with complex math formulas?', 'Yes. Unlike text-based converters, MatHandWrite preserves all mathematical content including integrals, summations, matrices, Greek letters, fractions, and any special notation.'],
                     ['Is my document kept private?', 'Absolutely. All processing happens directly in your browser using JavaScript. Your PDFs and documents are never uploaded to any server, ensuring complete privacy.']
                   ].map(([q, a]) => (
@@ -1483,7 +1483,7 @@ export default function PDFHandwritingConverter() {
               <div className="flex items-center gap-3">
                 <span className="text-2xl">🎁</span>
                 <span className="text-sm">
-                  <strong>Free Trial:</strong> {conversionsUsed}/1 conversion used
+                  <strong>Free Conversion:</strong> {conversionsUsed}/1 used
                 </span>
               </div>
               <button onClick={() => setShowPaywall(true)} className="px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-lg text-sm font-medium transition-all">
