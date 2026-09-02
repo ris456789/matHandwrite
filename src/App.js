@@ -1732,6 +1732,28 @@ export default function PDFHandwritingConverter() {
                     {renderLatexPreview(copyModeResult)}
                   </div>
                 </div>
+
+                <div>
+                  <h3 className="text-lg font-bold mb-3">Where to Paste This</h3>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {[
+                      ['📄', 'Overleaf / LaTeX editors', 'Paste directly into your .tex file - the $ and $$ delimiters are already valid LaTeX math mode.'],
+                      ['🧮', 'Word equation editor', 'Insert > Equation, switch the ribbon to "LaTeX" input mode, then paste - Word converts it to a real equation.'],
+                      ['📓', 'Notion / Obsidian', 'Type $$ to start a math block (or wrap inline text in single $), then paste the equation between them.'],
+                      ['💻', 'GitHub, GitLab, Jupyter', 'Paste straight into a Markdown file or notebook cell - both render $...$ and $$...$$ automatically.'],
+                      ['🤖', 'Back into ChatGPT/Claude', 'Paste it back in if you want the AI to keep editing - it reads as proper LaTeX this time, not garbled text.'],
+                      ['📝', 'Google Docs', 'Use an equation add-on like "Auto-LaTeX Equations," or paste each $...$ snippet into the built-in equation editor.']
+                    ].map(([icon, title, body]) => (
+                      <div key={title} className="flex gap-3 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+                        <span className="text-2xl">{icon}</span>
+                        <div>
+                          <p className="font-semibold text-white text-sm">{title}</p>
+                          <p className="text-gray-400 text-xs mt-1 leading-relaxed">{body}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
