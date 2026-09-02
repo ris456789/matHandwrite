@@ -1217,8 +1217,16 @@ export default function PDFHandwritingConverter() {
           for (let i = 0; i < darkPixels.length; i++) {
             const pixel = darkPixels[i];
             const noiseVal = noise(pixel.x, pixel.y);
-            const totalWobbleX = noiseVal * intensity * 1.5 + (Math.random() - 0.5) * intensity * 1.2 + pixel.y * slantAngle;
-            const totalWobbleY = Math.sin(pixel.x * 0.03) * intensity * 0.8 + (Math.random() - 0.5) * intensity * 1.2;
+            // The smooth noise() term is spatially correlated, so neighboring
+            // pixels of the same letter shift together and the glyph keeps
+            // its shape - a natural-looking wave. The old per-pixel random
+            // term was fully independent noise at *1.2 (bigger than the ink
+            // dot's own radius), so every pixel scattered on its own and
+            // letters/math symbols dissolved into an illegible dot cloud.
+            // Keeping it small (*0.25) adds ink-texture roughness without
+            // destroying the underlying shape.
+            const totalWobbleX = noiseVal * intensity * 1.5 + (Math.random() - 0.5) * intensity * 0.25 + pixel.y * slantAngle;
+            const totalWobbleY = Math.sin(pixel.x * 0.03) * intensity * 0.8 + (Math.random() - 0.5) * intensity * 0.25;
             const pressureVar = 0.5 + Math.abs(Math.sin(i * 0.1)) * 0.5;
             const thickness = (0.9 + Math.random() * 0.6) * pressureVar * intensity * 0.5;
             const pressureDarkness = 0.7 + pressureVar * 0.3;
