@@ -1709,7 +1709,23 @@ export default function PDFHandwritingConverter() {
                 <span className="mhw-gradient-animate block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                   Convert PDFs & math notes
                 </span>
-                <span className="block text-white mt-2">into authentic handwriting</span>
+                <span className="block text-white mt-2">
+                  into{' '}
+                  <span className="mhw-write">
+                    <span className="mhw-write-ink bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">authentic handwriting</span>
+                    <span className="mhw-write-nib" aria-hidden="true"></span>
+                    <svg className="mhw-write-underline" viewBox="0 0 300 14" preserveAspectRatio="none" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="mhw-underline-grad" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0" stopColor="#60a5fa" />
+                          <stop offset="0.5" stopColor="#a78bfa" />
+                          <stop offset="1" stopColor="#f472b6" />
+                        </linearGradient>
+                      </defs>
+                      <path d="M3 9 C 55 3, 110 13, 165 7 S 250 3, 297 8" pathLength="1" />
+                    </svg>
+                  </span>
+                </span>
               </h1>
             </div>
 
