@@ -1293,7 +1293,6 @@ export default function PDFHandwritingConverter() {
     }
     setLoading(false);
     setLoadingMessage('');
-    await downloadAsPDF('handwritten-document', converted);
   };
 
   const handleApplyStrokesClick = async (pageIndex) => {
@@ -1376,7 +1375,7 @@ export default function PDFHandwritingConverter() {
           <div className="text-center space-y-12">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-sm text-blue-400 mb-4">
               <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
-              No LaTeX Required • 6 Handwriting Styles • Math & Text Modes • Instant PDF Download
+              AI Reads Your Math Perfectly • Fixes Broken ChatGPT/Claude Copy-Paste • 6 Handwriting Styles
             </div>
             
             <div className="relative">
@@ -1401,10 +1400,10 @@ export default function PDFHandwritingConverter() {
                     <span className="text-4xl">🧮</span>
                   </div>
                   <h2 className="text-2xl font-bold mb-3">Math Mode</h2>
-                  <p className="text-gray-400 mb-4">Upload PDFs with equations, formulas, and mathematical notation. AI reads every page, rebuilds it in LaTeX, and typesets it by hand.</p>
+                  <p className="text-gray-400 mb-4">Upload a PDF with equations and formulas. Our AI reads every page and rewrites it in your handwriting - formulas, symbols, and all.</p>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
                     <span>✓</span>
-                    No LaTeX Required - Just Upload PDF
+                    No Setup Needed - Just Upload PDF
                   </div>
                   <div className="inline-block px-6 py-3 bg-blue-600 rounded-xl font-semibold mt-2 w-full">
                     Start with Math Mode →
@@ -1412,7 +1411,24 @@ export default function PDFHandwritingConverter() {
                 </div>
               </div>
 
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-purple-500/50 rounded-2xl p-8 transition-all hover:border-purple-400 hover:shadow-xl hover:shadow-purple-500/10">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('copy'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-emerald-500/50 rounded-2xl p-8 transition-all hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-500/10">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                    <span className="text-4xl">📋</span>
+                  </div>
+                  <h2 className="text-2xl font-bold mb-3">Copy Mode</h2>
+                  <p className="text-gray-400 mb-4">Paste messy math copied from ChatGPT or Claude, or upload a screenshot. We fix the broken symbols so it's ready to use anywhere.</p>
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
+                    <span>✓</span>
+                    Fixes Broken AI Copy-Paste
+                  </div>
+                  <div className="inline-block px-6 py-3 bg-emerald-600 rounded-xl font-semibold mt-2 w-full">
+                    Start with Copy Mode →
+                  </div>
+                </div>
+              </div>
+
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-2xl p-8 transition-all hover:border-purple-400 hover:shadow-xl hover:shadow-purple-500/10">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
                     <span className="text-4xl">📝</span>
@@ -1424,29 +1440,12 @@ export default function PDFHandwritingConverter() {
                   </div>
                 </div>
               </div>
-
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('copy'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-emerald-500/50 rounded-2xl p-8 transition-all hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-500/10">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
-                    <span className="text-4xl">📋</span>
-                  </div>
-                  <h2 className="text-2xl font-bold mb-3">Copy Mode</h2>
-                  <p className="text-gray-400 mb-4">Paste math copied from ChatGPT or Claude, or upload a screenshot. AI rebuilds it into clean, correct LaTeX you can copy-paste anywhere.</p>
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
-                    <span>✓</span>
-                    Fixes Broken AI Copy-Paste
-                  </div>
-                  <div className="inline-block px-6 py-3 bg-emerald-600 rounded-xl font-semibold mt-2 w-full">
-                    Start with Copy Mode →
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="flex items-center justify-center gap-8 pt-4 text-sm text-gray-400">
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
-                <span>AI-Powered LaTeX Transcription</span>
+                <span>AI Reads Your Math Perfectly</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-green-400">✓</span>
@@ -1457,15 +1456,15 @@ export default function PDFHandwritingConverter() {
             <section className="pt-20 border-t border-gray-800">
               <div className="max-w-4xl mx-auto">
                 <h2 className="text-4xl font-bold text-center mb-4">Transform Your Digital Math Notes Into Authentic Handwriting</h2>
-                <p className="text-center text-gray-400 text-lg mb-12">The only tool that reads your typed math PDFs with AI, rebuilds every formula in LaTeX, and typesets the whole page in genuine handwriting</p>
+                <p className="text-center text-gray-400 text-lg mb-12">The only tool that reads your typed math PDFs with AI and rewrites the whole page by hand - every formula, symbol, and equation exactly right</p>
 
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 border border-blue-500/20 rounded-2xl p-8 hover:border-blue-500/40 transition-all">
                     <div className="flex items-center gap-3 mb-4">
                       <span className="text-3xl">📐</span>
-                      <h3 className="text-2xl font-bold">AI-Read, LaTeX-Typeset</h3>
+                      <h3 className="text-2xl font-bold">Reads It Right, Every Time</h3>
                     </div>
-                    <p className="text-gray-300 mb-4">AI reads your whole document and transcribes it into LaTeX, so equations are properly typeset - not just re-inked pixels.</p>
+                    <p className="text-gray-300 mb-4">AI reads your whole document and rebuilds every formula correctly, so equations look right - not just redrawn pixels.</p>
                     <ul className="space-y-2 text-sm text-gray-400">
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Complex formulas stay intact</li>
                       <li className="flex items-center gap-2"><span className="text-blue-400">→</span> Graphs and diagrams preserved perfectly</li>
@@ -1553,7 +1552,7 @@ export default function PDFHandwritingConverter() {
                 <h2 className="text-4xl font-bold text-center mb-12">How to Convert Documents to Handwriting</h2>
                 <ol className="space-y-5">
                   {[
-                    ['Choose Your Mode', 'Select Math Mode for PDFs with equations, or Text Mode for typed text and essays.'],
+                    ['Choose Your Mode', 'Math Mode for PDFs with equations, Copy Mode for fixing messy ChatGPT/Claude math, or Text Mode for typed notes and essays.'],
                     ['Upload or Enter Content', 'Drag and drop your PDF, upload an image, or type/paste your text directly.'],
                     ['Customize Settings', 'Pick your pen color, paper style, and stroke intensity for the perfect look.'],
                     ['Convert', 'Click to convert individual pages or process your entire document at once.'],
@@ -1576,7 +1575,7 @@ export default function PDFHandwritingConverter() {
                 <h2 className="text-4xl font-bold text-center mb-12">Frequently Asked Questions</h2>
                 <div className="divide-y divide-gray-800">
                   {[
-                    ['How do I convert math equations to handwriting?', "Upload your math PDF or image to MatHandWrite's Math Mode. The tool applies realistic handwriting effects while preserving all equations, formulas, and mathematical notation exactly as written. No LaTeX knowledge required."],
+                    ['How do I convert math equations to handwriting?', "Upload your math PDF or image to MatHandWrite's Math Mode. The tool applies realistic handwriting effects while preserving all equations, formulas, and mathematical notation exactly as written. No special formatting knowledge required."],
                     ['How much does MatHandWrite cost?', 'MatHandWrite offers affordable weekly, monthly, and annual subscription plans.'],
                     ['Does the converter work with complex math formulas?', 'Yes. Unlike text-based converters, MatHandWrite preserves all mathematical content including integrals, summations, matrices, Greek letters, fractions, and any special notation.'],
                     ['Is my document kept private?', 'Absolutely. All processing happens directly in your browser using JavaScript. Your PDFs and documents are never uploaded to any server, ensuring complete privacy.']
@@ -1691,7 +1690,7 @@ export default function PDFHandwritingConverter() {
               <div className="mb-4">
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-full text-sm text-green-400 mb-2">
                   <span>✓</span>
-                  No LaTeX Required - Upload Any PDF or Image
+                  No Setup Needed - Upload Any PDF or Image
                 </div>
                 <p className="text-gray-400 text-sm">Perfect for typed notes, scanned homework, or any document with math equations</p>
               </div>
@@ -1750,7 +1749,29 @@ export default function PDFHandwritingConverter() {
                 <span>✓</span>
                 Fixes Broken ChatGPT/Claude Copy-Paste
               </div>
-              <p className="text-gray-400 text-sm">Paste text copied from an AI chat, or upload a screenshot - get back clean, copy-pasteable LaTeX that won't fall apart when you paste it elsewhere.</p>
+              <p className="text-gray-400 text-sm">Paste text copied from an AI chat, or upload a screenshot - get back clean math you can actually use.</p>
+            </div>
+
+            <div className="max-w-3xl mx-auto mb-8 bg-gray-950/50 border border-gray-800 rounded-2xl p-6">
+              <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wide">What This Actually Does</h3>
+              <p className="text-gray-400 text-sm mb-4 leading-relaxed">
+                When you copy math out of ChatGPT or Claude, it often turns into a jumble of symbols instead of a real equation. That's because those apps show you nicely formatted math on screen, but the text underneath doesn't come along cleanly when you copy it. Copy Mode reads that mess and rebuilds the actual equation, so it works wherever you paste it next.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-3 text-xs mb-4">
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-red-400 font-semibold mb-1">❌ What you copy from ChatGPT</p>
+                  <p className="text-gray-400 font-mono break-words">𝑥(𝑡)=∑𝑘=−∞∞𝑐𝑘𝑒𝑗𝑘𝜔0𝑡</p>
+                </div>
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                  <p className="text-green-400 font-semibold mb-1">✅ What Copy Mode gives you</p>
+                  <p className="text-gray-300 font-mono break-words">{'$x(t) = \\sum_{k=-\\infty}^{\\infty} c_k e^{jk\\omega_0 t}$'}</p>
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3 text-xs text-gray-400">
+                <div className="flex items-center gap-2"><span className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-emerald-600 rounded-full text-white font-bold text-[10px]">1</span> Copy the messy math (or screenshot it)</div>
+                <div className="flex items-center gap-2"><span className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-emerald-600 rounded-full text-white font-bold text-[10px]">2</span> Paste or upload it below</div>
+                <div className="flex items-center gap-2"><span className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-emerald-600 rounded-full text-white font-bold text-[10px]">3</span> Copy the fixed version out</div>
+              </div>
             </div>
 
             <div className="flex justify-center gap-3 mb-6">
@@ -1923,7 +1944,7 @@ export default function PDFHandwritingConverter() {
               </button>
               <button onClick={applyToAll} disabled={loading || !jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
                 <span>✨</span>
-                Convert All & Download PDF
+                Convert All Pages
               </button>
               <button onClick={() => downloadAsPDF('handwritten-document')} disabled={loading || !jsPdfLoaded} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 rounded-xl font-medium transition-all shadow-lg shadow-green-500/20 ml-auto disabled:opacity-50">
                 <span>📄</span>
