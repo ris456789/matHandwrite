@@ -68,7 +68,7 @@ export default function PDFHandwritingConverter() {
   const [conversionsUsed, setConversionsUsed] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [mathHandwritingStyle, setMathHandwritingStyle] = useState('journal');
+  const [mathHandwritingStyle, setMathHandwritingStyle] = useState('cursive');
   const [katexLoaded, setKatexLoaded] = useState(false);
   const [html2canvasLoaded, setHtml2canvasLoaded] = useState(false);
   const [copySourceType, setCopySourceType] = useState('text');
@@ -846,6 +846,119 @@ export default function PDFHandwritingConverter() {
   // multi-page PDFs - just don't set it so high it triggers rate limits.
   const AI_TRANSCRIPTION_CONCURRENCY = 4;
 
+  // Pure ink/paper-texture pass: takes a clean typeset (or scanned) image and
+  // returns a dataURL of it re-inked onto textured paper. Shared by the
+  // initial upload (so a page already looks handwritten the moment AI
+  // transcription finishes, instead of a blank digital-looking render until
+  // the user manually clicks "Convert All Pages") and the manual
+  // re-apply/Convert-All actions later.
+  const renderInkEffect = (sourceDataUrl, width, height, options) => {
+    const { paperType: paperTypeValue, penColor: penColorValue, strokeIntensity: intensity } = options;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onerror = () => resolve(null);
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          createPaperTexture(ctx, canvas.width, canvas.height, paperTypeValue);
+          ctx.globalCompositeOperation = 'multiply';
+          // Scale-to-fit: the source may not exactly match width/height, so
+          // draw it stretched to the target canvas.
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.globalCompositeOperation = 'source-over';
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          const [penR, penG, penB] = [
+            parseInt(penColorValue.slice(1, 3), 16),
+            parseInt(penColorValue.slice(3, 5), 16),
+            parseInt(penColorValue.slice(5, 7), 16)
+          ];
+
+          const darkPixels = [];
+          for (let i = 0; i < data.length; i += 4) {
+            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            if (brightness < 200) {
+              darkPixels.push({
+                x: (i / 4) % canvas.width,
+                y: Math.floor((i / 4) / canvas.width),
+                brightness,
+                index: i
+              });
+            }
+          }
+
+          const [paperR, paperG, paperB] = paperTypeValue === 'aged' ? [244, 232, 208] : [252, 248, 240];
+          for (const pixel of darkPixels) {
+            data[pixel.index] = paperR;
+            data[pixel.index + 1] = paperG;
+            data[pixel.index + 2] = paperB;
+          }
+          ctx.putImageData(imageData, 0, 0);
+
+          const noise = (x, y) => Math.sin(x * 0.05 + y * 0.034) * Math.cos(y * 0.062 - x * 0.026);
+          const slantAngle = (Math.random() - 0.5) * 0.05;
+
+          for (let i = 0; i < darkPixels.length; i++) {
+            const pixel = darkPixels[i];
+            const noiseVal = noise(pixel.x, pixel.y);
+            // Smooth, spatially-correlated wave (noiseVal term) plus a small
+            // independent per-pixel jitter for ink-texture roughness without
+            // scattering neighboring pixels of the same letter apart - see
+            // the ink-precision fix this was tuned against.
+            const totalWobbleX = noiseVal * intensity * 1.5 + (Math.random() - 0.5) * intensity * 0.25 + pixel.y * slantAngle;
+            const totalWobbleY = Math.sin(pixel.x * 0.03) * intensity * 0.8 + (Math.random() - 0.5) * intensity * 0.25;
+            const pressureVar = 0.5 + Math.abs(Math.sin(i * 0.1)) * 0.5;
+            const thickness = (0.9 + Math.random() * 0.6) * pressureVar * intensity * 0.5;
+            const pressureDarkness = 0.7 + pressureVar * 0.3;
+            const inkVariation = 0.9 + Math.random() * 0.1;
+
+            ctx.fillStyle = `rgb(${penR * pressureDarkness * inkVariation}, ${penG * pressureDarkness * inkVariation}, ${penB * pressureDarkness * inkVariation})`;
+            ctx.beginPath();
+            ctx.arc(pixel.x + totalWobbleX, pixel.y + totalWobbleY, thickness, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (i % 3 === 0) {
+              ctx.globalAlpha = 0.4;
+              ctx.beginPath();
+              ctx.arc(pixel.x + totalWobbleX + (Math.random() - 0.5) * intensity * 0.5,
+                      pixel.y + totalWobbleY + (Math.random() - 0.5) * intensity * 0.5,
+                      thickness * 0.6, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+          }
+
+          ctx.globalAlpha = 0.5;
+          for (let i = 0; i < darkPixels.length - 10; i += 3) {
+            const p1 = darkPixels[i];
+            const p2 = darkPixels[i + Math.floor(Math.random() * 8) + 2];
+            const dist = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+            if (dist < 8 && Math.random() > 0.4) {
+              ctx.strokeStyle = penColorValue;
+              ctx.lineWidth = 0.4 + Math.random() * 0.6;
+              ctx.beginPath();
+              ctx.moveTo(p1.x, p1.y);
+              ctx.quadraticCurveTo((p1.x + p2.x) / 2 + (Math.random() - 0.5) * intensity,
+                                   (p1.y + p2.y) / 2 + (Math.random() - 0.5) * intensity,
+                                   p2.x, p2.y);
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1;
+
+          resolve(canvas.toDataURL('image/png'));
+        } catch (error) {
+          console.error('Ink effect render failed:', error);
+          resolve(null);
+        }
+      };
+      img.src = sourceDataUrl;
+    });
+  };
+
   const handlePDFUpload = async (file) => {
     if (!canConvert()) {
       setShowPaywall(true);
@@ -919,23 +1032,37 @@ export default function PDFHandwritingConverter() {
         if (rendered && rendered.length > 0) {
           // A source page's transcription may need more than one handwritten
           // page - push each slice as its own page, all falling back to the
-          // same original scan if the ink effect needs it.
-          rendered.forEach((slice) => {
+          // same original scan if the ink effect needs it. Ink the page
+          // immediately so it already looks handwritten (paper texture +
+          // pen strokes) instead of the blank digital typeset render -
+          // "Convert All Pages" then just re-styles it, it isn't required
+          // to get a handwritten result in the first place.
+          setLoadingMessage(`Applying handwriting effect to page ${i + 1} of ${renderedPages.length}...`);
+          for (const slice of rendered) {
+            const handwritten = await renderInkEffect(slice.dataUrl, slice.width, slice.height, { paperType, penColor, strokeIntensity });
             loadedPages.push({
               original,
               aiRendered: slice.dataUrl,
-              handwritten: null,
+              handwritten,
               width: slice.width,
-              height: slice.height
+              height: slice.height,
+              latexText,
+              sourceWidth: width,
+              sourceHeight: height,
+              sourceIndex: i
             });
-          });
+          }
         } else {
           loadedPages.push({
             original,
             aiRendered: null,
             handwritten: null,
             width,
-            height
+            height,
+            latexText: null,
+            sourceWidth: width,
+            sourceHeight: height,
+            sourceIndex: i
           });
         }
       }
@@ -1019,9 +1146,10 @@ export default function PDFHandwritingConverter() {
           const original = canvas.toDataURL('image/png');
 
           let rendered = null;
+          let latexText = null;
           try {
             setLoadingMessage('Reading image with AI...');
-            const latexText = await transcribePageToLatex(original);
+            latexText = await transcribePageToLatex(original);
             if (latexText.trim()) {
               setLoadingMessage('Typesetting page...');
               rendered = await renderLatexPageToImage(latexText, canvas.width, canvas.height, mathHandwritingStyle);
@@ -1031,20 +1159,34 @@ export default function PDFHandwritingConverter() {
           }
 
           if (rendered && rendered.length > 0) {
-            setPages(rendered.map((slice) => ({
-              original,
-              aiRendered: slice.dataUrl,
-              handwritten: null,
-              width: slice.width,
-              height: slice.height
-            })));
+            setLoadingMessage('Applying handwriting effect...');
+            const newPages = [];
+            for (const slice of rendered) {
+              const handwritten = await renderInkEffect(slice.dataUrl, slice.width, slice.height, { paperType, penColor, strokeIntensity });
+              newPages.push({
+                original,
+                aiRendered: slice.dataUrl,
+                handwritten,
+                width: slice.width,
+                height: slice.height,
+                latexText,
+                sourceWidth: canvas.width,
+                sourceHeight: canvas.height,
+                sourceIndex: 0
+              });
+            }
+            setPages(newPages);
           } else {
             setPages([{
               original,
               aiRendered: null,
               handwritten: null,
               width: canvas.width,
-              height: canvas.height
+              height: canvas.height,
+              latexText: null,
+              sourceWidth: canvas.width,
+              sourceHeight: canvas.height,
+              sourceIndex: 0
             }]);
           }
 
@@ -1223,157 +1365,85 @@ export default function PDFHandwritingConverter() {
     incrementConversions();
   };
 
-  const applyMathHandwriting = (pageIndex) => {
-    return new Promise((resolve) => {
-      const page = pages[pageIndex];
-      if (!page || !page.original) {
-        alert('❌ Error: Page data not found');
-        resolve(false);
-        return;
-      }
+  const applyMathHandwriting = async (pageIndex) => {
+    const page = pages[pageIndex];
+    if (!page || !page.original) {
+      alert('❌ Error: Page data not found');
+      return false;
+    }
 
-      const img = new Image();
-      img.onerror = () => {
-        alert('❌ Error loading image.');
-        resolve(false);
-      };
+    const dataUrl = await renderInkEffect(page.aiRendered || page.original, page.width, page.height, { paperType, penColor, strokeIntensity });
+    if (!dataUrl) {
+      alert('❌ Error processing image.');
+      return false;
+    }
 
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = page.width;
-          canvas.height = page.height;
-          const ctx = canvas.getContext('2d');
-          createPaperTexture(ctx, canvas.width, canvas.height, paperType);
-          ctx.globalCompositeOperation = 'multiply';
-          // Scale-to-fit: the AI-rendered source (page.aiRendered) is rasterized
-          // at its own natural content size, which may not exactly match
-          // page.width/page.height, so draw it stretched to the target canvas.
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          ctx.globalCompositeOperation = 'source-over';
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imageData.data;
-          const [penR, penG, penB] = [
-            parseInt(penColor.slice(1, 3), 16),
-            parseInt(penColor.slice(3, 5), 16),
-            parseInt(penColor.slice(5, 7), 16)
-          ];
-          
-          const darkPixels = [];
-          for (let i = 0; i < data.length; i += 4) {
-            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            if (brightness < 200) {
-              darkPixels.push({
-                x: (i / 4) % canvas.width,
-                y: Math.floor((i / 4) / canvas.width),
-                brightness,
-                index: i
-              });
-            }
-          }
-          
-          const [paperR, paperG, paperB] = paperType === 'aged' ? [244, 232, 208] : [252, 248, 240];
-          for (const pixel of darkPixels) {
-            data[pixel.index] = paperR;
-            data[pixel.index + 1] = paperG;
-            data[pixel.index + 2] = paperB;
-          }
-          ctx.putImageData(imageData, 0, 0);
-
-          const intensity = strokeIntensity;
-          const noise = (x, y) => Math.sin(x * 0.05 + y * 0.034) * Math.cos(y * 0.062 - x * 0.026);
-          const slantAngle = (Math.random() - 0.5) * 0.05;
-
-          for (let i = 0; i < darkPixels.length; i++) {
-            const pixel = darkPixels[i];
-            const noiseVal = noise(pixel.x, pixel.y);
-            // The smooth noise() term is spatially correlated, so neighboring
-            // pixels of the same letter shift together and the glyph keeps
-            // its shape - a natural-looking wave. The old per-pixel random
-            // term was fully independent noise at *1.2 (bigger than the ink
-            // dot's own radius), so every pixel scattered on its own and
-            // letters/math symbols dissolved into an illegible dot cloud.
-            // Keeping it small (*0.25) adds ink-texture roughness without
-            // destroying the underlying shape.
-            const totalWobbleX = noiseVal * intensity * 1.5 + (Math.random() - 0.5) * intensity * 0.25 + pixel.y * slantAngle;
-            const totalWobbleY = Math.sin(pixel.x * 0.03) * intensity * 0.8 + (Math.random() - 0.5) * intensity * 0.25;
-            const pressureVar = 0.5 + Math.abs(Math.sin(i * 0.1)) * 0.5;
-            const thickness = (0.9 + Math.random() * 0.6) * pressureVar * intensity * 0.5;
-            const pressureDarkness = 0.7 + pressureVar * 0.3;
-            const inkVariation = 0.9 + Math.random() * 0.1;
-            
-            ctx.fillStyle = `rgb(${penR * pressureDarkness * inkVariation}, ${penG * pressureDarkness * inkVariation}, ${penB * pressureDarkness * inkVariation})`;
-            ctx.beginPath();
-            ctx.arc(pixel.x + totalWobbleX, pixel.y + totalWobbleY, thickness, 0, Math.PI * 2);
-            ctx.fill();
-            
-            if (i % 3 === 0) {
-              ctx.globalAlpha = 0.4;
-              ctx.beginPath();
-              ctx.arc(pixel.x + totalWobbleX + (Math.random() - 0.5) * intensity * 0.5, 
-                      pixel.y + totalWobbleY + (Math.random() - 0.5) * intensity * 0.5, 
-                      thickness * 0.6, 0, Math.PI * 2);
-              ctx.fill();
-              ctx.globalAlpha = 1;
-            }
-          }
-          
-          ctx.globalAlpha = 0.5;
-          for (let i = 0; i < darkPixels.length - 10; i += 3) {
-            const p1 = darkPixels[i];
-            const p2 = darkPixels[i + Math.floor(Math.random() * 8) + 2];
-            const dist = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-            if (dist < 8 && Math.random() > 0.4) {
-              ctx.strokeStyle = penColor;
-              ctx.lineWidth = 0.4 + Math.random() * 0.6;
-              ctx.beginPath();
-              ctx.moveTo(p1.x, p1.y);
-              ctx.quadraticCurveTo((p1.x + p2.x) / 2 + (Math.random() - 0.5) * intensity, 
-                                   (p1.y + p2.y) / 2 + (Math.random() - 0.5) * intensity, 
-                                   p2.x, p2.y);
-              ctx.stroke();
-            }
-          }
-          ctx.globalAlpha = 1;
-
-          const dataUrl = canvas.toDataURL('image/png');
-          // Functional update - a loop over many pages (applyToAll) calls this
-          // repeatedly while awaiting each one, and a plain `[...pages]` read
-          // from the closure would still see the pre-loop snapshot each time,
-          // silently discarding every page's result except the last.
-          setPages((prevPages) => {
-            const updated = [...prevPages];
-            updated[pageIndex] = { ...updated[pageIndex], handwritten: dataUrl };
-            return updated;
-          });
-
-          resolve(dataUrl);
-        } catch (error) {
-          alert('❌ Error processing image: ' + error.message);
-          resolve(null);
-        }
-      };
-
-      img.src = page.aiRendered || page.original;
+    // Functional update - a loop over many pages (applyToAll) calls this
+    // repeatedly while awaiting each one, and a plain `[...pages]` read
+    // from the closure would still see the pre-loop snapshot each time,
+    // silently discarding every page's result except the last.
+    setPages((prevPages) => {
+      const updated = [...prevPages];
+      updated[pageIndex] = { ...updated[pageIndex], handwritten: dataUrl };
+      return updated;
     });
+
+    return dataUrl;
   };
 
   // The paid step is the AI transcription done at upload time (see
   // handlePDFUpload) - re-applying the ink/paper effect afterward is a free,
   // local, repeatable re-styling pass, so it isn't gated behind canConvert().
+  //
+  // Re-typesets every page from its stored latexText using whatever
+  // mathHandwritingStyle is currently selected, then re-inks it - this is
+  // what lets a student change handwriting style *after* AI conversion and
+  // have it actually apply, not just re-run the ink effect on the old
+  // typeset. A source page's re-typeset slice count can differ from before
+  // (a wordier style needs more room), so the whole array is rebuilt rather
+  // than updated in place; pages without stored latexText (the AI
+  // transcription fallback case) just get re-inked as-is.
   const applyToAll = async () => {
     setLoading(true);
-    // Track results locally instead of reading the `pages` state closure -
-    // it won't reflect this loop's own updates until React re-renders, so a
-    // read at the end would still see the pre-conversion snapshot.
-    const converted = [...pages];
-    for (let i = 0; i < pages.length; i++) {
-      setLoadingMessage(`Converting page ${i + 1} of ${pages.length}...`);
-      const dataUrl = await applyMathHandwriting(i);
-      if (dataUrl) {
-        converted[i] = { ...converted[i], handwritten: dataUrl };
+    const rebuilt = [];
+    const seenSourceIndexes = new Set();
+
+    for (const page of pages) {
+      if (page.sourceIndex !== undefined && page.sourceIndex !== null) {
+        if (seenSourceIndexes.has(page.sourceIndex)) continue;
+        seenSourceIndexes.add(page.sourceIndex);
+
+        if (page.latexText && page.latexText.trim()) {
+          try {
+            setLoadingMessage(`Re-typesetting page ${page.sourceIndex + 1}...`);
+            const rendered = await renderLatexPageToImage(page.latexText, page.sourceWidth, page.sourceHeight, mathHandwritingStyle);
+            for (const slice of rendered) {
+              const handwritten = await renderInkEffect(slice.dataUrl, slice.width, slice.height, { paperType, penColor, strokeIntensity });
+              rebuilt.push({
+                original: page.original,
+                aiRendered: slice.dataUrl,
+                handwritten,
+                width: slice.width,
+                height: slice.height,
+                latexText: page.latexText,
+                sourceWidth: page.sourceWidth,
+                sourceHeight: page.sourceHeight,
+                sourceIndex: page.sourceIndex
+              });
+            }
+            continue;
+          } catch (err) {
+            console.error(`Re-typesetting page ${page.sourceIndex + 1} failed, re-inking existing render instead:`, err);
+          }
+        }
       }
+
+      setLoadingMessage(`Converting page ${rebuilt.length + 1}...`);
+      const handwritten = await renderInkEffect(page.aiRendered || page.original, page.width, page.height, { paperType, penColor, strokeIntensity });
+      rebuilt.push({ ...page, handwritten: handwritten || page.handwritten });
     }
+
+    setPages(rebuilt);
     setLoading(false);
     setLoadingMessage('');
   };
@@ -2040,6 +2110,22 @@ export default function PDFHandwritingConverter() {
             </div>
 
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">✍️ Handwriting Style</label>
+                <select value={mathHandwritingStyle} onChange={(e) => setMathHandwritingStyle(e.target.value)} className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-white">
+                  <option value="text">📝 Standard</option>
+                  <option value="journal">📓 Journal</option>
+                  <option value="cute">🖊️ Rounded</option>
+                  <option value="signature">✒️ Signature</option>
+                  <option value="flashcard">🗂️ Compact</option>
+                  <option value="cursive">🖋️ Cursive</option>
+                  <option value="print">✏️ Print</option>
+                  <option value="bold">🖊️ Bold</option>
+                  <option value="neat">📐 Technical</option>
+                  <option value="elegant">🖋️ Script</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-2">Changed the style? Click "Convert All Pages" above to re-typeset with it.</p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">🖊️ Pen Color</label>
                 <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} className="h-10 w-24 rounded-lg cursor-pointer bg-gray-800 border border-gray-700" />
