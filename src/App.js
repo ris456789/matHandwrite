@@ -686,6 +686,11 @@ export default function PDFHandwritingConverter() {
   };
 
   const handleImageUpload = async (file) => {
+    if (!canConvert()) {
+      setShowPaywall(true);
+      return;
+    }
+
     setLoading(true);
     setLoadingMessage('Loading image...');
     return new Promise((resolve) => {
@@ -704,7 +709,7 @@ export default function PDFHandwritingConverter() {
           setLoadingMessage('');
           resolve();
         };
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           canvas.width = img.width;
           canvas.height = img.height;
@@ -712,13 +717,39 @@ export default function PDFHandwritingConverter() {
           ctx.fillStyle = 'white';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0);
-          
-          setPages([{
-            original: canvas.toDataURL('image/png'),
-            handwritten: null,
-            width: canvas.width,
-            height: canvas.height
-          }]);
+          const original = canvas.toDataURL('image/png');
+
+          let rendered = null;
+          try {
+            setLoadingMessage('Reading image with AI...');
+            const latexText = await transcribePageToLatex(original);
+            if (latexText.trim()) {
+              setLoadingMessage('Typesetting page...');
+              rendered = await renderLatexPageToImage(latexText, canvas.width, canvas.height, mathHandwritingStyle);
+            }
+          } catch (err) {
+            console.error('AI transcription failed for image:', err);
+          }
+
+          if (rendered && rendered.length > 0) {
+            setPages(rendered.map((slice) => ({
+              original,
+              aiRendered: slice.dataUrl,
+              handwritten: null,
+              width: slice.width,
+              height: slice.height
+            })));
+          } else {
+            setPages([{
+              original,
+              aiRendered: null,
+              handwritten: null,
+              width: canvas.width,
+              height: canvas.height
+            }]);
+          }
+
+          incrementConversions();
           setLoading(false);
           setLoadingMessage('');
           resolve();
