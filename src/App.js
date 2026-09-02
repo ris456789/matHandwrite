@@ -573,6 +573,12 @@ export default function PDFHandwritingConverter() {
     }
   };
 
+  // How many pages get transcribed by Claude at once. The API call is a
+  // network round-trip, not CPU work, so running several concurrently
+  // instead of awaiting each one in turn is what actually shortens
+  // multi-page PDFs - just don't set it so high it triggers rate limits.
+  const AI_TRANSCRIPTION_CONCURRENCY = 4;
+
   const handlePDFUpload = async (file) => {
     if (!canConvert()) {
       setShowPaywall(true);
@@ -589,8 +595,8 @@ export default function PDFHandwritingConverter() {
         alert(`⚠️ PDF has ${pdf.numPages} pages. Only the first 50 will be processed.`);
       }
 
-      const loadedPages = [];
       const pagesToProcess = Math.min(pdf.numPages, 50);
+      const renderedPages = [];
 
       for (let i = 1; i <= pagesToProcess; i++) {
         setLoadingMessage(`Rendering page ${i} of ${pagesToProcess}...`);
@@ -603,18 +609,44 @@ export default function PDFHandwritingConverter() {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvasContext: ctx, viewport }).promise;
-        const original = canvas.toDataURL('image/png');
+        renderedPages.push({
+          original: canvas.toDataURL('image/png'),
+          width: viewport.width,
+          height: viewport.height
+        });
+      }
+
+      const latexResults = new Array(renderedPages.length).fill('');
+      let completed = 0;
+      let nextIndex = 0;
+      const transcribeWorker = async () => {
+        while (nextIndex < renderedPages.length) {
+          const idx = nextIndex++;
+          try {
+            latexResults[idx] = await transcribePageToLatex(renderedPages[idx].original);
+          } catch (err) {
+            console.error(`AI transcription failed for page ${idx + 1}:`, err);
+          }
+          completed++;
+          setLoadingMessage(`Reading pages with AI... (${completed} of ${renderedPages.length})`);
+        }
+      };
+      const workerCount = Math.min(AI_TRANSCRIPTION_CONCURRENCY, renderedPages.length);
+      await Promise.all(Array.from({ length: workerCount }, transcribeWorker));
+
+      const loadedPages = [];
+      for (let i = 0; i < renderedPages.length; i++) {
+        const { original, width, height } = renderedPages[i];
+        const latexText = latexResults[i];
 
         let rendered = null;
-        try {
-          setLoadingMessage(`Reading page ${i} of ${pagesToProcess} with AI...`);
-          const latexText = await transcribePageToLatex(original);
-          if (latexText.trim()) {
-            setLoadingMessage(`Typesetting page ${i} of ${pagesToProcess}...`);
-            rendered = await renderLatexPageToImage(latexText, viewport.width, viewport.height, mathHandwritingStyle);
+        if (latexText && latexText.trim()) {
+          try {
+            setLoadingMessage(`Typesetting page ${i + 1} of ${renderedPages.length}...`);
+            rendered = await renderLatexPageToImage(latexText, width, height, mathHandwritingStyle);
+          } catch (err) {
+            console.error(`Typesetting failed for page ${i + 1}:`, err);
           }
-        } catch (err) {
-          console.error(`AI transcription failed for page ${i}:`, err);
         }
 
         if (rendered && rendered.length > 0) {
@@ -635,8 +667,8 @@ export default function PDFHandwritingConverter() {
             original,
             aiRendered: null,
             handwritten: null,
-            width: viewport.width,
-            height: viewport.height
+            width,
+            height
           });
         }
       }
