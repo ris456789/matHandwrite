@@ -41,22 +41,13 @@ const HANDWRITING_TEMPLATE_PAGES = [
   { title: 'My Handwriting - Page 2 of 2: Numbers & Punctuation', chars: ['0','1','2','3','4','5','6','7','8','9','.',',','!','?',"'",'"','-',':',';','(',')'], cols: 6 }
 ];
 
-// Returns one cell's rect in page-inches. `fraction: true` instead returns
-// it as a 0-1 fraction of the page (for cropping a photo of unknown pixel
-// size), the same rect either way since both are derived from the same
-// TEMPLATE_* constants.
-const templateCellRect = (page, charIndex, fraction = false) => {
+// Returns one cell's rect in page-inches, for laying out the template PDF.
+const templateCellRect = (page, charIndex) => {
   const col = charIndex % page.cols;
   const row = Math.floor(charIndex / page.cols);
   const x = TEMPLATE_MARGIN_X_IN + col * (TEMPLATE_CELL_SIZE_IN + TEMPLATE_CELL_GAP_IN);
   const y = TEMPLATE_GRID_TOP_IN + row * (TEMPLATE_CELL_SIZE_IN + TEMPLATE_CELL_GAP_IN);
-  if (!fraction) return { x, y, w: TEMPLATE_CELL_SIZE_IN, h: TEMPLATE_CELL_SIZE_IN };
-  return {
-    x: x / TEMPLATE_PAGE_WIDTH_IN,
-    y: y / TEMPLATE_PAGE_HEIGHT_IN,
-    w: TEMPLATE_CELL_SIZE_IN / TEMPLATE_PAGE_WIDTH_IN,
-    h: TEMPLATE_CELL_SIZE_IN / TEMPLATE_PAGE_HEIGHT_IN
-  };
+  return { x, y, w: TEMPLATE_CELL_SIZE_IN, h: TEMPLATE_CELL_SIZE_IN };
 };
 
 export default function PDFHandwritingConverter() {
@@ -88,21 +79,6 @@ export default function PDFHandwritingConverter() {
   const [copyModeImagePreview, setCopyModeImagePreview] = useState(null);
   const [copyModeImageCopied, setCopyModeImageCopied] = useState(false);
   const [copyModeImageBusy, setCopyModeImageBusy] = useState(false);
-  const [customGlyphMap, setCustomGlyphMap] = useState(null);
-  const [pendingGlyphMap, setPendingGlyphMap] = useState({});
-  const [showHandwritingSetup, setShowHandwritingSetup] = useState(false);
-  const [templatePagesCaptured, setTemplatePagesCaptured] = useState([0, 0]);
-
-  // Load any previously-captured "My Handwriting" glyphs for this user.
-  useEffect(() => {
-    if (!user?.id) return;
-    try {
-      const stored = localStorage.getItem(`mathandwrite_custom_handwriting_${user.id}`);
-      if (stored) setCustomGlyphMap(JSON.parse(stored));
-    } catch (err) {
-      console.error('Loading custom handwriting failed:', err);
-    }
-  }, [user?.id]);
 
   // Load PDF.js
   useEffect(() => {
@@ -1173,217 +1149,6 @@ export default function PDFHandwritingConverter() {
     pdf.save('my-handwriting-template.pdf');
   };
 
-  // Slices one uploaded photo of a filled-in template page into individual
-  // character glyphs. Assumes the photo is a straight-on, edge-to-edge shot
-  // of the page (no rotation/perspective correction attempted) - box
-  // fractions from templateCellRect() are scaled directly against the
-  // image's actual pixel dimensions.
-  const sliceTemplateImage = (imageEl, page) => {
-    const srcCanvas = document.createElement('canvas');
-    srcCanvas.width = imageEl.width;
-    srcCanvas.height = imageEl.height;
-    const srcCtx = srcCanvas.getContext('2d');
-    srcCtx.drawImage(imageEl, 0, 0);
-
-    const INK_THRESHOLD = 150;
-    const INSET = 0.08; // shrink the sampled region inward so the printed
-    // light-gray guide box border itself never gets picked up as ink.
-    const glyphs = {};
-
-    page.chars.forEach((ch, i) => {
-      const rect = templateCellRect(page, i, true);
-      const px = Math.round(rect.x * srcCanvas.width);
-      const py = Math.round(rect.y * srcCanvas.height);
-      const pw = Math.round(rect.w * srcCanvas.width);
-      const ph = Math.round(rect.h * srcCanvas.height);
-      const insetX = Math.round(pw * INSET);
-      const insetY = Math.round(ph * INSET);
-      const sx = px + insetX, sy = py + insetY;
-      const sw = pw - insetX * 2, sh = ph - insetY * 2;
-      if (sw <= 0 || sh <= 0) return;
-
-      const cellData = srcCtx.getImageData(sx, sy, sw, sh);
-      const d = cellData.data;
-
-      let minX = sw, minY = sh, maxX = -1, maxY = -1;
-      for (let yy = 0; yy < sh; yy++) {
-        for (let xx = 0; xx < sw; xx++) {
-          const idx = (yy * sw + xx) * 4;
-          const brightness = (d[idx] + d[idx + 1] + d[idx + 2]) / 3;
-          if (brightness < INK_THRESHOLD) {
-            if (xx < minX) minX = xx;
-            if (xx > maxX) maxX = xx;
-            if (yy < minY) minY = yy;
-            if (yy > maxY) maxY = yy;
-          }
-        }
-      }
-      if (maxX < 0) return; // nothing written in this box
-
-      const pad = 3;
-      const gx = Math.max(0, minX - pad), gy = Math.max(0, minY - pad);
-      const gw = Math.min(sw, maxX + pad) - gx;
-      const gh = Math.min(sh, maxY + pad) - gy;
-
-      const glyphCanvas = document.createElement('canvas');
-      glyphCanvas.width = gw;
-      glyphCanvas.height = gh;
-      const glyphCtx = glyphCanvas.getContext('2d');
-      const glyphData = glyphCtx.createImageData(gw, gh);
-      for (let yy = 0; yy < gh; yy++) {
-        for (let xx = 0; xx < gw; xx++) {
-          const srcIdx = ((yy + gy) * sw + (xx + gx)) * 4;
-          const dstIdx = (yy * gw + xx) * 4;
-          const brightness = (d[srcIdx] + d[srcIdx + 1] + d[srcIdx + 2]) / 3;
-          // Soft alpha falloff (not a hard cutoff) so glyph edges stay
-          // anti-aliased instead of jagged when composited over paper later.
-          const alpha = Math.max(0, Math.min(1, 1 - (brightness - 60) / 140));
-          glyphData.data[dstIdx] = d[srcIdx];
-          glyphData.data[dstIdx + 1] = d[srcIdx + 1];
-          glyphData.data[dstIdx + 2] = d[srcIdx + 2];
-          glyphData.data[dstIdx + 3] = Math.round(alpha * 255);
-        }
-      }
-      glyphCtx.putImageData(glyphData, 0, 0);
-      glyphs[ch] = { dataUrl: glyphCanvas.toDataURL('image/png'), width: gw, height: gh };
-    });
-
-    return glyphs;
-  };
-
-  const handleTemplateUpload = (pageIndex, file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const glyphs = sliceTemplateImage(img, HANDWRITING_TEMPLATE_PAGES[pageIndex]);
-        setPendingGlyphMap((prev) => ({ ...prev, ...glyphs }));
-        setTemplatePagesCaptured((prev) => {
-          const updated = [...prev];
-          updated[pageIndex] = Object.keys(glyphs).length;
-          return updated;
-        });
-      };
-      img.onerror = () => alert('❌ Could not load that image.');
-      img.src = e.target.result;
-    };
-    reader.onerror = () => alert('❌ Could not read that file.');
-    reader.readAsDataURL(file);
-  };
-
-  const saveCustomHandwriting = () => {
-    if (Object.keys(pendingGlyphMap).length === 0) {
-      alert('Upload at least one filled-in template page first.');
-      return;
-    }
-    try {
-      const key = `mathandwrite_custom_handwriting_${user?.id || 'anon'}`;
-      localStorage.setItem(key, JSON.stringify(pendingGlyphMap));
-      setCustomGlyphMap(pendingGlyphMap);
-      setShowHandwritingSetup(false);
-      setTextMode('custom');
-    } catch (err) {
-      console.error('Saving custom handwriting failed:', err);
-      alert('❌ Could not save - your captured handwriting may be too large for browser storage. Try capturing fewer characters at once.');
-    }
-  };
-
-  const clearCustomHandwriting = () => {
-    const key = `mathandwrite_custom_handwriting_${user?.id || 'anon'}`;
-    localStorage.removeItem(key);
-    setCustomGlyphMap(null);
-    setPendingGlyphMap({});
-    setTemplatePagesCaptured([0, 0]);
-    if (textMode === 'custom') setTextMode('text');
-  };
-
-  // Loads every captured glyph's dataURL into an actual Image element -
-  // canvas drawImage needs a decoded image, not just the dataURL string.
-  const loadGlyphImages = (glyphMap) => {
-    const entries = Object.entries(glyphMap);
-    return Promise.all(entries.map(([ch, g]) => new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve([ch, { img, width: g.width, height: g.height }]);
-      img.onerror = () => resolve([ch, null]);
-      img.src = g.dataUrl;
-    }))).then((results) => {
-      const map = {};
-      results.forEach(([ch, val]) => { if (val) map[ch] = val; });
-      return map;
-    });
-  };
-
-  // Draws text using the student's own captured letter images instead of a
-  // system font - each glyph keeps its natural aspect ratio scaled to a
-  // consistent height, with a small per-character jitter (position +
-  // rotation) so repeated letters don't look identically stamped. Falls
-  // back to a stock cursive font for any character that wasn't captured
-  // (punctuation they skipped, symbols, etc.) so nothing silently vanishes.
-  const drawCustomHandwritingText = (ctx, text, canvas, loadedGlyphs, penColorValue) => {
-    const targetHeight = 44;
-    const lineHeight = 64;
-    const letterSpacing = 3;
-    const wobble = 2;
-    const spaceWidth = targetHeight * 0.4;
-    const maxWidth = canvas.width - 200;
-    const fallbackFont = `${targetHeight}px 'Patrick Hand', cursive`;
-
-    let x = 100, y = 100;
-
-    const findGlyph = (ch) => loadedGlyphs[ch] || loadedGlyphs[ch.toLowerCase()] || loadedGlyphs[ch.toUpperCase()];
-
-    const measureWord = (word) => {
-      let w = 0;
-      for (const ch of word) {
-        const glyph = findGlyph(ch);
-        w += glyph ? (glyph.width / glyph.height) * targetHeight + letterSpacing : targetHeight * 0.5 + letterSpacing;
-      }
-      return w;
-    };
-
-    const drawChar = (ch) => {
-      const glyph = findGlyph(ch);
-      if (glyph) {
-        const w = (glyph.width / glyph.height) * targetHeight;
-        ctx.save();
-        ctx.translate(x + (Math.random() - 0.5) * wobble, y + (Math.random() - 0.5) * wobble);
-        ctx.rotate((Math.random() - 0.5) * 0.05);
-        ctx.globalAlpha = 0.88 + Math.random() * 0.12;
-        ctx.drawImage(glyph.img, 0, 0, w, targetHeight);
-        ctx.restore();
-        x += w + letterSpacing;
-      } else {
-        ctx.save();
-        ctx.font = fallbackFont;
-        ctx.fillStyle = penColorValue;
-        ctx.textBaseline = 'top';
-        ctx.fillText(ch, x, y);
-        const m = ctx.measureText(ch);
-        ctx.restore();
-        x += m.width + letterSpacing;
-      }
-    };
-
-    const paragraphs = text.split('\n');
-    paragraphs.forEach((para, pi) => {
-      const words = para.split(/\s+/).filter(Boolean);
-      words.forEach((word) => {
-        if (y > canvas.height - 150) return;
-        const wordWidth = measureWord(word);
-        if (x + wordWidth > maxWidth) {
-          x = 100;
-          y += lineHeight + Math.random() * 5;
-        }
-        for (const ch of word) drawChar(ch);
-        x += spaceWidth + letterSpacing;
-      });
-      if (pi < paragraphs.length - 1) {
-        x = 100;
-        y += lineHeight + Math.random() * 5;
-      }
-    });
-  };
-
   const convertTextToHandwriting = async () => {
     if (!canConvert()) {
       setShowPaywall(true);
@@ -1410,49 +1175,44 @@ export default function PDFHandwritingConverter() {
 
     createPaperTexture(ctx, canvas.width, canvas.height, paperType);
 
-    if (textMode === 'custom' && customGlyphMap) {
-      const loadedGlyphs = await loadGlyphImages(customGlyphMap);
-      drawCustomHandwritingText(ctx, textInput, canvas, loadedGlyphs, penColor);
-    } else {
-      const { fontSize, lineHeight, slant, fontFamily, wobble, letterSpacing, italic } = HANDWRITING_STYLES[textMode];
+    const { fontSize, lineHeight, slant, fontFamily, wobble, letterSpacing, italic } = HANDWRITING_STYLES[textMode];
 
-      // Make sure the webfont is actually loaded before drawing - otherwise the
-      // canvas silently falls back to a generic sans-serif on first use.
-      try {
-        await document.fonts.load(`${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`);
-      } catch (e) { /* font API not supported - fall back to default rendering */ }
+    // Make sure the webfont is actually loaded before drawing - otherwise the
+    // canvas silently falls back to a generic sans-serif on first use.
+    try {
+      await document.fonts.load(`${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`);
+    } catch (e) { /* font API not supported - fall back to default rendering */ }
 
-      ctx.font = `${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`;
-      ctx.textBaseline = 'top';
+    ctx.font = `${italic ? 'italic' : 'normal'} ${fontSize}px ${fontFamily}`;
+    ctx.textBaseline = 'top';
 
-      const words = textInput.split(/\s+/).filter(word => word.length > 0);
+    const words = textInput.split(/\s+/).filter(word => word.length > 0);
 
-      let x = 100, y = 100;
-      const maxWidth = canvas.width - 200;
+    let x = 100, y = 100;
+    const maxWidth = canvas.width - 200;
 
-      words.forEach((word) => {
-        const metrics = ctx.measureText(word + ' ');
+    words.forEach((word) => {
+      const metrics = ctx.measureText(word + ' ');
 
-        if (x + metrics.width > maxWidth) {
-          x = 100;
-          y += lineHeight + Math.random() * 5;
-        }
+      if (x + metrics.width > maxWidth) {
+        x = 100;
+        y += lineHeight + Math.random() * 5;
+      }
 
-        if (y > canvas.height - 150) return;
+      if (y > canvas.height - 150) return;
 
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.transform(1, slant, 0, 1, 0, 0);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.transform(1, slant, 0, 1, 0, 0);
 
-        ctx.fillStyle = penColor;
-        ctx.globalAlpha = 0.85 + Math.random() * 0.15;
-        ctx.fillText(word, (Math.random() - 0.5) * wobble, (Math.random() - 0.5) * wobble);
+      ctx.fillStyle = penColor;
+      ctx.globalAlpha = 0.85 + Math.random() * 0.15;
+      ctx.fillText(word, (Math.random() - 0.5) * wobble, (Math.random() - 0.5) * wobble);
 
-        ctx.restore();
+      ctx.restore();
 
-        x += metrics.width + letterSpacing;
-      });
-    }
+      x += metrics.width + letterSpacing;
+    });
 
     setPages([{
       original: canvas.toDataURL('image/png'),
@@ -1945,70 +1705,11 @@ export default function PDFHandwritingConverter() {
                   <option value="bold">🖊️ Bold</option>
                   <option value="neat">📐 Technical</option>
                   <option value="elegant">🖋️ Script</option>
-                  <option value="custom">🖋️ My Handwriting{customGlyphMap ? '' : ' (Set Up)'}</option>
                 </select>
 
-                <div className="mt-3">
-                  {customGlyphMap ? (
-                    <div className="flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-2.5 text-sm flex-wrap">
-                      <span className="text-emerald-300">✓ My Handwriting is set up ({Object.keys(customGlyphMap).length} characters captured)</span>
-                      <div className="flex gap-3">
-                        <button onClick={() => { setPendingGlyphMap(customGlyphMap); setShowHandwritingSetup(true); }} className="text-gray-300 hover:text-white underline text-sm">Edit</button>
-                        <button onClick={clearCustomHandwriting} className="text-red-400 hover:text-red-300 underline text-sm">Clear</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => { setPendingGlyphMap({}); setShowHandwritingSetup(true); }} className="text-sm text-emerald-400 hover:text-emerald-300 underline">
-                      🖋️ Set up "My Handwriting" - write with your own handwriting instead of a font
-                    </button>
-                  )}
-                </div>
-
-                {showHandwritingSetup && (
-                  <div className="mt-4 bg-gray-950/60 border border-gray-800 rounded-2xl p-6 space-y-5">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold">Set Up My Handwriting</h3>
-                      <button onClick={() => setShowHandwritingSetup(false)} className="text-gray-400 hover:text-white text-sm">✕ Close</button>
-                    </div>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Download the template, write one character per box by hand, then photograph or scan each page straight-on (page filling the frame, no tilt) and upload it below. We pull out your actual letters and use them to write everything from now on - your real handwriting, not a font.
-                    </p>
-                    <button onClick={generateHandwritingTemplate} className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold transition-all">
-                      ⬇️ Download Template (PDF)
-                    </button>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      {HANDWRITING_TEMPLATE_PAGES.map((page, pageIndex) => (
-                        <div key={page.title} className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-                          <p className="text-sm font-semibold mb-1">{page.title}</p>
-                          <p className="text-xs text-gray-500 mb-3">{page.chars.length} characters</p>
-                          <label className="cursor-pointer inline-block px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-medium transition-all">
-                            📤 Upload Photo
-                            <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files[0]; if (f) handleTemplateUpload(pageIndex, f); e.target.value = ''; }} className="hidden" />
-                          </label>
-                          {templatePagesCaptured[pageIndex] > 0 && (
-                            <p className="text-xs text-emerald-400 mt-2">✓ {templatePagesCaptured[pageIndex]} characters captured</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {Object.keys(pendingGlyphMap).length > 0 && (
-                      <div>
-                        <p className="text-sm font-semibold mb-2">Preview ({Object.keys(pendingGlyphMap).length} captured)</p>
-                        <div className="flex flex-wrap gap-2 bg-white rounded-lg p-3 max-h-40 overflow-y-auto">
-                          {Object.entries(pendingGlyphMap).map(([ch, g]) => (
-                            <img key={ch} src={g.dataUrl} alt={ch} title={ch} className="h-10 w-auto" />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <button onClick={saveCustomHandwriting} disabled={Object.keys(pendingGlyphMap).length === 0} className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-all">
-                      Save My Handwriting →
-                    </button>
-                  </div>
-                )}
+                <button onClick={generateHandwritingTemplate} className="mt-3 text-sm text-emerald-400 hover:text-emerald-300 underline">
+                  ⬇️ Download a blank handwriting practice template (PDF)
+                </button>
               </div>
 
               <div>
