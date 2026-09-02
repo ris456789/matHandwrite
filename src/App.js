@@ -1145,35 +1145,27 @@ export default function PDFHandwritingConverter() {
             
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-3xl -z-10"></div>
-              <h1 className="text-6xl md:text-8xl font-black leading-tight mb-6">
-                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent" style={{
-                  fontFamily: 'Georgia, serif',
-                  fontWeight: '300',
-                  fontStyle: 'italic',
-                  letterSpacing: '-0.02em'
-                }}>
-                  Transform
+              <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.1] tracking-tight mb-6">
+                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                  Convert PDFs & math notes
                 </span>
-                <span className="block text-white font-bold mt-2" style={{ letterSpacing: '-0.03em' }}>digital documents into</span>
-                <span className="block bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent font-bold mt-2" style={{ letterSpacing: '-0.03em' }}>
-                  authentic handwriting
-                </span>
+                <span className="block text-white mt-2">into authentic handwriting</span>
               </h1>
             </div>
-            
-            <p className="text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-              Professional handwriting conversion for <span className="text-purple-400 font-semibold">students, educators, and professionals</span>.
+
+            <p className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
+              AI-powered handwriting conversion for <span className="text-purple-400 font-semibold">students, educators, and professionals</span>.
               <span className="block mt-2">Choose your mode and get instant, realistic results.</span>
             </p>
 
             <div className="grid md:grid-cols-2 gap-8 pt-12 max-w-4xl mx-auto">
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-blue-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-blue-500/20">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-blue-500/50 rounded-2xl p-8 transition-all hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/10">
                 <div className="text-center">
-                  <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <span className="text-6xl">🧮</span>
+                  <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                    <span className="text-4xl">🧮</span>
                   </div>
-                  <h2 className="text-3xl font-bold mb-4">Math Mode</h2>
-                  <p className="text-gray-400 text-lg mb-4">Upload PDFs with equations, formulas, and mathematical notation. AI reads every page, rebuilds it in LaTeX, and typesets it by hand.</p>
+                  <h2 className="text-2xl font-bold mb-3">Math Mode</h2>
+                  <p className="text-gray-400 mb-4">Upload PDFs with equations, formulas, and mathematical notation. AI reads every page, rebuilds it in LaTeX, and typesets it by hand.</p>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
                     <span>✓</span>
                     No LaTeX Required - Just Upload PDF
@@ -1184,13 +1176,13 @@ export default function PDFHandwritingConverter() {
                 </div>
               </div>
 
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-purple-500 rounded-3xl p-10 hover:scale-105 transition-all hover:shadow-2xl hover:shadow-purple-500/20">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-purple-500/50 rounded-2xl p-8 transition-all hover:border-purple-400 hover:shadow-xl hover:shadow-purple-500/10">
                 <div className="text-center">
-                  <div className="w-24 h-24 bg-gradient-to-br from-purple-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <span className="text-6xl">📝</span>
+                  <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                    <span className="text-4xl">📝</span>
                   </div>
-                  <h2 className="text-3xl font-bold mb-4">Text Modes</h2>
-                  <p className="text-gray-400 text-lg mb-6">Type, paste, or upload text files and convert to 6 different handwriting styles. Perfect for notes and essays.</p>
+                  <h2 className="text-2xl font-bold mb-3">Text Modes</h2>
+                  <p className="text-gray-400 mb-4">Type, paste, or upload text files and convert to 6 different handwriting styles. Perfect for notes and essays.</p>
                   <div className="inline-block px-6 py-3 bg-purple-600 rounded-xl font-semibold">
                     Start with Text Mode →
                   </div>
@@ -1275,6 +1267,72 @@ export default function PDFHandwritingConverter() {
                   <button onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl font-semibold transition-all shadow-lg shadow-blue-500/20">
                     Convert Your First PDF Now →
                   </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="pt-20 border-t border-gray-800 text-left">
+              <div className="max-w-5xl mx-auto">
+                <h2 className="text-4xl font-bold text-center mb-4">Why Students Choose MatHandWrite</h2>
+                <p className="text-center text-gray-400 text-lg mb-12 max-w-2xl mx-auto">The only PDF-to-handwriting converter that preserves complex math equations while looking genuinely hand-written.</p>
+
+                <div className="grid md:grid-cols-3 gap-6">
+                  {[
+                    { icon: '📐', title: 'Preserves All Math Content', body: 'Unlike font-based converters that fail with equations, MatHandWrite applies handwriting effects directly to your document. Every integral, matrix, and formula stays exactly as you created it.' },
+                    { icon: '✍️', title: 'Genuinely Realistic Results', body: 'Natural variations in stroke width, ink pressure, letter spacing, and positioning mimic real handwriting, not computer-generated fonts.' },
+                    { icon: '🔒', title: '100% Private & Secure', body: 'All processing happens in your browser. Your PDFs and documents are never uploaded to any server - your academic work stays private.' },
+                    { icon: '⚡', title: 'Fast, AI-Powered Conversion', body: 'Claude reads and transcribes every page in seconds. Handle up to 50 pages per PDF and download a ready-to-print handwritten document.' },
+                    { icon: '📄', title: 'Multiple Paper Styles', body: 'Choose plain white, lined notebook paper with red margins, or aged parchment texture for an authentic look.' },
+                    { icon: '🎨', title: 'Customizable Appearance', body: 'Pick any pen color, adjust stroke intensity, and control natural variation to match your personal handwriting style.' }
+                  ].map((f) => (
+                    <div key={f.title} className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+                      <span className="text-3xl">{f.icon}</span>
+                      <h3 className="text-lg font-bold mt-3 mb-2">{f.title}</h3>
+                      <p className="text-gray-400 text-sm leading-relaxed">{f.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="pt-20 border-t border-gray-800 text-left">
+              <div className="max-w-3xl mx-auto">
+                <h2 className="text-4xl font-bold text-center mb-12">How to Convert Documents to Handwriting</h2>
+                <ol className="space-y-5">
+                  {[
+                    ['Choose Your Mode', 'Select Math Mode for PDFs with equations, or Text Mode for typed text and essays.'],
+                    ['Upload or Enter Content', 'Drag and drop your PDF, upload an image, or type/paste your text directly.'],
+                    ['Customize Settings', 'Pick your pen color, paper style, and stroke intensity for the perfect look.'],
+                    ['Convert', 'Click to convert individual pages or process your entire document at once.'],
+                    ['Download as PDF', 'Save your handwritten document ready for printing or submission.']
+                  ].map(([title, body], i) => (
+                    <li key={title} className="flex gap-4 items-start bg-gray-900/40 border border-gray-800 rounded-xl p-5">
+                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm">{i + 1}</span>
+                      <div>
+                        <p className="font-semibold text-white">{title}</p>
+                        <p className="text-gray-400 text-sm mt-1">{body}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </section>
+
+            <section className="pt-20 pb-8 border-t border-gray-800 text-left">
+              <div className="max-w-3xl mx-auto">
+                <h2 className="text-4xl font-bold text-center mb-12">Frequently Asked Questions</h2>
+                <div className="divide-y divide-gray-800">
+                  {[
+                    ['How do I convert math equations to handwriting?', "Upload your math PDF or image to MatHandWrite's Math Mode. The tool applies realistic handwriting effects while preserving all equations, formulas, and mathematical notation exactly as written. No LaTeX knowledge required."],
+                    ['Is MatHandWrite free to use?', 'Yes, MatHandWrite offers a free trial conversion. For unlimited conversions, affordable weekly, monthly, and annual subscription plans are available.'],
+                    ['Does the converter work with complex math formulas?', 'Yes. Unlike text-based converters, MatHandWrite preserves all mathematical content including integrals, summations, matrices, Greek letters, fractions, and any special notation.'],
+                    ['Is my document kept private?', 'Absolutely. All processing happens directly in your browser using JavaScript. Your PDFs and documents are never uploaded to any server, ensuring complete privacy.']
+                  ].map(([q, a]) => (
+                    <div key={q} className="py-6">
+                      <h3 className="text-lg font-semibold text-white mb-2">{q}</h3>
+                      <p className="text-gray-400 leading-relaxed">{a}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </section>
