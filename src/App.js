@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUser, SignInButton, UserButton, useAuth } from '@clerk/clerk-react';
+import FallingEquations from './FallingEquations';
 
 // Stripe price IDs - replace with your actual Stripe price IDs
 const STRIPE_PRICES = {
@@ -1322,7 +1323,8 @@ export default function PDFHandwritingConverter() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white">
+    <div className="min-h-screen bg-transparent text-white">
+      <FallingEquations />
      <header className="border-b border-gray-800 backdrop-blur-sm bg-black/50 sticky top-0 z-40">
   <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
 
@@ -1386,30 +1388,30 @@ export default function PDFHandwritingConverter() {
       {activeTab === 'landing' && (
         <div className="max-w-7xl mx-auto px-6 py-20">
           <div className="text-center space-y-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-sm text-blue-400 mb-4">
+            <div className="mhw-reveal mhw-reveal-1 inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-sm text-blue-400 mb-4">
               <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
               AI Reads Your Math Perfectly • Fixes Broken ChatGPT/Claude Copy-Paste • 6 Handwriting Styles
             </div>
-            
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-3xl -z-10"></div>
+
+            <div className="relative mhw-reveal mhw-reveal-2">
+              <div className="mhw-blob absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-3xl -z-10"></div>
               <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.1] tracking-tight mb-6">
-                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <span className="mhw-gradient-animate block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                   Convert PDFs & math notes
                 </span>
                 <span className="block text-white mt-2">into authentic handwriting</span>
               </h1>
             </div>
 
-            <p className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
+            <p className="mhw-reveal mhw-reveal-3 text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
               AI-powered handwriting conversion for <span className="text-purple-400 font-semibold">students, educators, and professionals</span>.
               <span className="block mt-2">Choose your mode and get instant, realistic results.</span>
             </p>
 
-            <div className="grid md:grid-cols-3 gap-6 pt-12 max-w-6xl mx-auto">
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-blue-500/50 rounded-2xl p-8 transition-all hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/10">
+            <div className="mhw-reveal mhw-reveal-4 grid md:grid-cols-3 gap-6 pt-12 max-w-6xl mx-auto">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="mhw-card group cursor-pointer bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-sm border border-blue-500/50 rounded-2xl p-8 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/20">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                  <div className="mhw-float w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/30">
                     <span className="text-4xl">🧮</span>
                   </div>
                   <h2 className="text-2xl font-bold mb-3">Math Mode</h2>
@@ -1418,15 +1420,15 @@ export default function PDFHandwritingConverter() {
                     <span>✓</span>
                     No Setup Needed - Just Upload PDF
                   </div>
-                  <div className="inline-block px-6 py-3 bg-blue-600 rounded-xl font-semibold mt-2 w-full">
+                  <div className="mhw-shine inline-block px-6 py-3 bg-blue-600 rounded-xl font-semibold mt-2 w-full">
                     Start with Math Mode →
                   </div>
                 </div>
               </div>
 
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('copy'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-emerald-500/50 rounded-2xl p-8 transition-all hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-500/10">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('copy'); }} className="mhw-card group cursor-pointer bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-sm border border-emerald-500/50 rounded-2xl p-8 hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-500/20">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                  <div className="mhw-float w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/30" style={{ animationDelay: '1s' }}>
                     <span className="text-4xl">📋</span>
                   </div>
                   <h2 className="text-2xl font-bold mb-3">Copy Mode</h2>
@@ -1435,20 +1437,20 @@ export default function PDFHandwritingConverter() {
                     <span>✓</span>
                     Fixes Broken AI Copy-Paste
                   </div>
-                  <div className="inline-block px-6 py-3 bg-emerald-600 rounded-xl font-semibold mt-2 w-full">
+                  <div className="mhw-shine inline-block px-6 py-3 bg-emerald-600 rounded-xl font-semibold mt-2 w-full">
                     Start with Copy Mode →
                   </div>
                 </div>
               </div>
 
-              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-2xl p-8 transition-all hover:border-purple-400 hover:shadow-xl hover:shadow-purple-500/10">
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('text'); }} className="mhw-card group cursor-pointer bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-sm border border-gray-700 rounded-2xl p-8 hover:border-purple-400 hover:shadow-xl hover:shadow-purple-500/20">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                  <div className="mhw-float w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-purple-500/30" style={{ animationDelay: '2s' }}>
                     <span className="text-4xl">📝</span>
                   </div>
                   <h2 className="text-2xl font-bold mb-3">Text Modes</h2>
                   <p className="text-gray-400 mb-4">Type, paste, or upload text files and convert to 6 different handwriting styles. Perfect for notes and essays.</p>
-                  <div className="inline-block px-6 py-3 bg-purple-600 rounded-xl font-semibold">
+                  <div className="mhw-shine inline-block px-6 py-3 bg-purple-600 rounded-xl font-semibold">
                     Start with Text Mode →
                   </div>
                 </div>

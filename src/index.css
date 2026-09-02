@@ -1,3 +1,112 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Page background lives on <body> so the fixed FallingEquations canvas
+   (-z-10) can sit between it and the app content. */
+body {
+  background: #05070d;
+  background: linear-gradient(150deg, #0a0a0f 0%, #0d1117 45%, #000000 100%);
+  background-attachment: fixed;
+}
+
+/* ---- Sleek UI animation helpers ---------------------------------------- */
+
+@keyframes mhw-fade-up {
+  from { opacity: 0; transform: translate3d(0, 18px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes mhw-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes mhw-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
+@keyframes mhw-gradient-pan {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes mhw-blob {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33%      { transform: translate3d(3%, -4%, 0) scale(1.08); }
+  66%      { transform: translate3d(-3%, 3%, 0) scale(0.94); }
+}
+
+/* Fade/slide the hero and section content in on first paint. */
+.mhw-reveal {
+  opacity: 0;
+  animation: mhw-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.mhw-reveal-1 { animation-delay: 0.05s; }
+.mhw-reveal-2 { animation-delay: 0.15s; }
+.mhw-reveal-3 { animation-delay: 0.25s; }
+.mhw-reveal-4 { animation-delay: 0.35s; }
+
+/* Animated gradient text for the big headline. */
+.mhw-gradient-animate {
+  background-size: 220% 220%;
+  animation: mhw-gradient-pan 8s ease infinite;
+}
+
+/* Slow drift for the ambient glow blob behind the headline. */
+.mhw-blob {
+  animation: mhw-blob 18s ease-in-out infinite;
+}
+
+/* Gentle bob for the mode-card icons. */
+.mhw-float {
+  animation: mhw-float 5s ease-in-out infinite;
+}
+
+/* Lift + glow on hover for interactive cards. */
+.mhw-card {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease,
+    border-color 0.3s ease;
+  will-change: transform;
+}
+.mhw-card:hover {
+  transform: translateY(-6px);
+}
+
+/* Shimmer sweep used on primary CTA buttons. */
+.mhw-shine {
+  position: relative;
+  overflow: hidden;
+}
+.mhw-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255, 255, 255, 0.25),
+    transparent
+  );
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+}
+.mhw-shine:hover::after {
+  left: 125%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mhw-reveal,
+  .mhw-gradient-animate,
+  .mhw-blob,
+  .mhw-float {
+    animation: none !important;
+  }
+  .mhw-reveal { opacity: 1; }
+  .mhw-card:hover { transform: none; }
+}
