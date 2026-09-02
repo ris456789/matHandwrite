@@ -45,6 +45,12 @@ export default function PDFHandwritingConverter() {
   const [mathHandwritingStyle, setMathHandwritingStyle] = useState('journal');
   const [katexLoaded, setKatexLoaded] = useState(false);
   const [html2canvasLoaded, setHtml2canvasLoaded] = useState(false);
+  const [copySourceType, setCopySourceType] = useState('text');
+  const [copyModeInput, setCopyModeInput] = useState('');
+  const [copyModeResult, setCopyModeResult] = useState('');
+  const [copyModeLoading, setCopyModeLoading] = useState(false);
+  const [copyModeCopied, setCopyModeCopied] = useState(false);
+  const [copyModeImagePreview, setCopyModeImagePreview] = useState(null);
 
   // Load PDF.js
   useEffect(() => {
@@ -440,6 +446,137 @@ export default function PDFHandwritingConverter() {
 
     const data = await response.json();
     return data.text || '';
+  };
+
+  // Sends text a student pasted from an AI chat assistant to the backend,
+  // which asks Claude to rebuild any mangled/unicode math into clean,
+  // consistently-delimited LaTeX - fixing exactly the kind of garbled output
+  // ChatGPT/Claude produce when their rendered math is copy-pasted as text.
+  const cleanupTextToLatex = async (rawText) => {
+    const token = await getToken();
+    const response = await fetch('/api/convert/text-to-latex', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text: rawText })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Cleanup failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    return data.text || '';
+  };
+
+  const handleCopyModeSubmit = async () => {
+    if (!canConvert()) {
+      setShowPaywall(true);
+      return;
+    }
+
+    setCopyModeLoading(true);
+    setCopyModeResult('');
+    try {
+      const cleaned = await cleanupTextToLatex(copyModeInput);
+      setCopyModeResult(cleaned);
+      incrementConversions();
+    } catch (err) {
+      console.error('Copy Mode text cleanup failed:', err);
+      alert('❌ Could not clean up that text. Please try again.');
+    }
+    setCopyModeLoading(false);
+  };
+
+  const handleCopyModeImageUpload = (file) => {
+    if (!canConvert()) {
+      setShowPaywall(true);
+      return;
+    }
+
+    setCopyModeLoading(true);
+    setCopyModeResult('');
+    const reader = new FileReader();
+    reader.onerror = () => {
+      alert('❌ Error reading image file');
+      setCopyModeLoading(false);
+    };
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => {
+        alert('❌ Error loading image.');
+        setCopyModeLoading(false);
+      };
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        setCopyModeImagePreview(dataUrl);
+
+        try {
+          const transcribed = await transcribePageToLatex(dataUrl);
+          setCopyModeResult(transcribed);
+          incrementConversions();
+        } catch (err) {
+          console.error('Copy Mode image transcription failed:', err);
+          alert('❌ Could not read that image. Please try again.');
+        }
+        setCopyModeLoading(false);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const copyResultToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(copyModeResult);
+      setCopyModeCopied(true);
+      setTimeout(() => setCopyModeCopied(false), 2000);
+    } catch (err) {
+      console.error('Clipboard write failed:', err);
+      alert('❌ Could not copy to clipboard. Please select and copy the text manually.');
+    }
+  };
+
+  // Splits cleaned text+LaTeX into text/math segments and renders math with
+  // KaTeX so students can visually verify equations before copy-pasting -
+  // this is a live preview only, not what gets copied (the plain $-delimited
+  // text is what goes to the clipboard, so it stays valid LaTeX anywhere).
+  const renderLatexPreview = (text) => {
+    if (!katexLoaded || !window.katex) {
+      return <span className="whitespace-pre-wrap">{text}</span>;
+    }
+    const mathRegex = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+    const nodes = [];
+    let lastIndex = 0;
+    let match;
+    let key = 0;
+    while ((match = mathRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        nodes.push(<span key={key++} className="whitespace-pre-wrap">{text.slice(lastIndex, match.index)}</span>);
+      }
+      const isDisplay = match[1] !== undefined;
+      const value = isDisplay ? match[1] : match[2];
+      try {
+        const html = window.katex.renderToString(value, { throwOnError: false, displayMode: isDisplay });
+        nodes.push(<span key={key++} className={isDisplay ? 'block my-2' : 'inline-block mx-0.5'} dangerouslySetInnerHTML={{ __html: html }} />);
+      } catch (e) {
+        nodes.push(<span key={key++} className="whitespace-pre-wrap">{value}</span>);
+      }
+      lastIndex = mathRegex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      nodes.push(<span key={key++} className="whitespace-pre-wrap">{text.slice(lastIndex)}</span>);
+    }
+    return nodes;
   };
 
   // Renders transcribed text+LaTeX into a clean image using KaTeX (for real
@@ -1158,7 +1295,7 @@ export default function PDFHandwritingConverter() {
               <span className="block mt-2">Choose your mode and get instant, realistic results.</span>
             </p>
 
-            <div className="grid md:grid-cols-2 gap-8 pt-12 max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-6 pt-12 max-w-6xl mx-auto">
               <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('math'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-blue-500/50 rounded-2xl p-8 transition-all hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/10">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
@@ -1185,6 +1322,23 @@ export default function PDFHandwritingConverter() {
                   <p className="text-gray-400 mb-4">Type, paste, or upload text files and convert to 6 different handwriting styles. Perfect for notes and essays.</p>
                   <div className="inline-block px-6 py-3 bg-purple-600 rounded-xl font-semibold">
                     Start with Text Mode →
+                  </div>
+                </div>
+              </div>
+
+              <div onClick={() => { if (!isSignedIn) { alert('Please sign in to continue'); return; } setActiveTab('copy'); }} className="group cursor-pointer bg-gradient-to-br from-gray-900 to-gray-800 border border-emerald-500/50 rounded-2xl p-8 transition-all hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-500/10">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-transform group-hover:scale-105">
+                    <span className="text-4xl">📋</span>
+                  </div>
+                  <h2 className="text-2xl font-bold mb-3">Copy Mode</h2>
+                  <p className="text-gray-400 mb-4">Paste math copied from ChatGPT or Claude, or upload a screenshot. AI rebuilds it into clean, correct LaTeX you can copy-paste anywhere.</p>
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
+                    <span>✓</span>
+                    Fixes Broken AI Copy-Paste
+                  </div>
+                  <div className="inline-block px-6 py-3 bg-emerald-600 rounded-xl font-semibold mt-2 w-full">
+                    Start with Copy Mode →
                   </div>
                 </div>
               </div>
@@ -1476,7 +1630,115 @@ export default function PDFHandwritingConverter() {
         </div>
       )}
 
-      {isSignedIn && !subscription.subscribed && pages.length > 0 && (
+      {isSignedIn && activeTab === 'copy' && (
+        <div className="max-w-5xl mx-auto px-6 py-12">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-3xl p-8">
+            <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setActiveTab('landing')} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-all">
+                  ← Back
+                </button>
+                <h2 className="text-3xl font-bold">Copy Mode</h2>
+              </div>
+              <button onClick={() => setActiveTab('math')} className="px-4 py-2 bg-blue-600/20 border border-blue-500 hover:bg-blue-600/30 rounded-lg transition-all text-sm flex items-center gap-2">
+                <span>🧮</span>
+                Switch to Math Mode
+              </button>
+            </div>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-full text-sm text-green-400 mb-2">
+                <span>✓</span>
+                Fixes Broken ChatGPT/Claude Copy-Paste
+              </div>
+              <p className="text-gray-400 text-sm">Paste text copied from an AI chat, or upload a screenshot - get back clean, copy-pasteable LaTeX that won't fall apart when you paste it elsewhere.</p>
+            </div>
+
+            <div className="flex justify-center gap-3 mb-6">
+              <button onClick={() => setCopySourceType('text')} className={`px-5 py-2 rounded-lg font-medium transition-all ${copySourceType === 'text' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                📋 Paste Text
+              </button>
+              <button onClick={() => setCopySourceType('image')} className={`px-5 py-2 rounded-lg font-medium transition-all ${copySourceType === 'image' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                🖼️ Upload Screenshot
+              </button>
+            </div>
+
+            {copySourceType === 'text' ? (
+              <div className="max-w-2xl mx-auto space-y-4">
+                <textarea
+                  value={copyModeInput}
+                  onChange={(e) => setCopyModeInput(e.target.value)}
+                  placeholder="Paste text copied from ChatGPT, Claude, or any AI chat here..."
+                  maxLength={20000}
+                  className="w-full h-48 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition text-white resize-none"
+                />
+                <div className="text-right text-xs text-gray-500">{copyModeInput.length}/20,000 characters</div>
+                <button
+                  onClick={handleCopyModeSubmit}
+                  disabled={!copyModeInput.trim() || copyModeLoading}
+                  className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-all"
+                >
+                  {copyModeLoading ? 'Cleaning up with AI...' : 'Clean Up with AI →'}
+                </button>
+              </div>
+            ) : (
+              <div className="max-w-2xl mx-auto border-4 border-dashed border-gray-600 rounded-3xl p-16 hover:border-emerald-500 transition-all text-center">
+                <label className="cursor-pointer block">
+                  <div className="space-y-4">
+                    <div className="text-6xl">📤</div>
+                    <p className="text-2xl font-bold">Upload a Screenshot</p>
+                    <p className="text-gray-400">Screenshot of a ChatGPT/Claude artifact or canvas with math</p>
+                    <div className="inline-block px-8 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-semibold transition-all">
+                      {copyModeLoading ? 'Reading...' : 'Choose Image'}
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => { const f = e.target.files[0]; if (f) handleCopyModeImageUpload(f); e.target.value = ''; }}
+                    disabled={copyModeLoading}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            )}
+
+            {copyModeResult && (
+              <div className="mt-10 space-y-6">
+                {copySourceType === 'image' && copyModeImagePreview && (
+                  <div>
+                    <h3 className="text-lg font-bold mb-2">Uploaded Screenshot</h3>
+                    <img src={copyModeImagePreview} alt="Uploaded screenshot" className="max-h-64 rounded-xl border border-gray-700" />
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                    <h3 className="text-lg font-bold">Cleaned LaTeX - copy this</h3>
+                    <button onClick={copyResultToClipboard} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold transition-all">
+                      {copyModeCopied ? '✓ Copied!' : '📋 Copy to Clipboard'}
+                    </button>
+                  </div>
+                  <textarea
+                    readOnly
+                    value={copyModeResult}
+                    onClick={(e) => e.target.select()}
+                    className="w-full h-64 px-4 py-3 bg-gray-950 border border-gray-700 rounded-xl text-gray-200 font-mono text-sm resize-none"
+                  />
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold mb-2">Preview</h3>
+                  <div className="bg-white text-black rounded-xl p-6 leading-relaxed overflow-x-auto">
+                    {renderLatexPreview(copyModeResult)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isSignedIn && !subscription.subscribed && (pages.length > 0 || (activeTab === 'copy' && copyModeResult)) && (
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl p-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1494,7 +1756,7 @@ export default function PDFHandwritingConverter() {
         </div>
       )}
 
-      {subscription.subscribed && pages.length > 0 && (
+      {subscription.subscribed && (pages.length > 0 || (activeTab === 'copy' && copyModeResult)) && (
   <div className="max-w-7xl mx-auto px-6 py-4">
     <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-4">
       <div className="flex items-center justify-between flex-wrap gap-4">
