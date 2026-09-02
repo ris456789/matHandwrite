@@ -723,13 +723,18 @@ export default function PDFHandwritingConverter() {
     container.style.left = '-99999px';
     container.style.top = '0';
     container.style.width = `${cssWidth}px`;
-    container.style.padding = '48px';
+    container.style.padding = '32px';
     container.style.boxSizing = 'border-box';
     container.style.background = 'transparent';
     container.style.color = penColor;
     container.style.fontFamily = style.fontFamily;
-    container.style.fontSize = `${style.fontSize * 0.55}px`;
-    container.style.lineHeight = `${style.lineHeight * 0.55}px`;
+    // A 0.55 scale rendered handwriting so large relative to the page that
+    // dense source PDFs were ballooning 5x in page count (a 23-page PDF came
+    // out as 119 pages) - handwriting genuinely needs more room than compact
+    // typeset text, but not that much. 0.32 keeps it legible while landing
+    // closer to ~1.5-2x the original page count instead of ~5x.
+    container.style.fontSize = `${style.fontSize * 0.32}px`;
+    container.style.lineHeight = `${style.lineHeight * 0.32}px`;
     container.style.whiteSpace = 'pre-wrap';
     container.style.wordBreak = 'break-word';
 
@@ -741,7 +746,7 @@ export default function PDFHandwritingConverter() {
       } else {
         const span = document.createElement('span');
         span.style.display = seg.type === 'display' ? 'block' : 'inline-block';
-        span.style.margin = seg.type === 'display' ? '10px 0' : '0 2px';
+        span.style.margin = seg.type === 'display' ? '6px 0' : '0 2px';
         try {
           span.innerHTML = window.katex.renderToString(seg.value, {
             throwOnError: false,
@@ -1479,8 +1484,8 @@ export default function PDFHandwritingConverter() {
                     </div>
                     <p className="text-gray-300 mb-4">Choose from multiple handwriting styles that look genuinely written by hand, not generated.</p>
                     <ul className="space-y-2 text-sm text-gray-400">
-                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Clean readable • Journal natural • Cute bubbly</li>
-                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Signature elegant • Flashcard compact • Cursive flowing</li>
+                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Standard • Journal • Rounded</li>
+                      <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Signature • Compact • Cursive</li>
                       <li className="flex items-center gap-2"><span className="text-purple-400">→</span> Customize pen color & paper texture</li>
                     </ul>
                   </div>
@@ -1612,16 +1617,16 @@ export default function PDFHandwritingConverter() {
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">✍️ Handwriting Style</label>
                 <select value={textMode} onChange={(e) => setTextMode(e.target.value)} className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition text-white">
-                  <option value="text">📝 Text-to-Handwriting (Clean & Readable)</option>
-                  <option value="journal">📔 Journal Mode (Natural & Casual)</option>
-                  <option value="cute">💕 Cute Aesthetic (Bubbly & Fun)</option>
-                  <option value="signature">✒️ Signature Style (Elegant & Slanted)</option>
-                  <option value="flashcard">🗂️ Flashcard Mode (Compact & Clear)</option>
-                  <option value="cursive">🖋️ Cursive (Flowing & Connected)</option>
-                  <option value="print">✏️ Casual Print (Relaxed)</option>
-                  <option value="bold">🖊️ Bold Marker (Thick & Punchy)</option>
-                  <option value="neat">📐 Neat & Technical (Precise)</option>
-                  <option value="elegant">🌸 Elegant Script (Flowing Calligraphy)</option>
+                  <option value="text">📝 Standard</option>
+                  <option value="journal">📓 Journal</option>
+                  <option value="cute">🖊️ Rounded</option>
+                  <option value="signature">✒️ Signature</option>
+                  <option value="flashcard">🗂️ Compact</option>
+                  <option value="cursive">🖋️ Cursive</option>
+                  <option value="print">✏️ Print</option>
+                  <option value="bold">🖊️ Bold</option>
+                  <option value="neat">📐 Technical</option>
+                  <option value="elegant">🖋️ Script</option>
                 </select>
               </div>
 
@@ -1697,16 +1702,16 @@ export default function PDFHandwritingConverter() {
               <div className="max-w-md mx-auto text-left">
                 <label className="block text-sm font-medium text-gray-300 mb-2">✍️ Handwriting Style</label>
                 <select value={mathHandwritingStyle} onChange={(e) => setMathHandwritingStyle(e.target.value)} className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-white">
-                  <option value="text">📝 Clean & Readable</option>
-                  <option value="journal">📔 Journal (Natural & Casual)</option>
-                  <option value="cute">💕 Cute Aesthetic (Bubbly)</option>
-                  <option value="signature">✒️ Signature (Elegant & Slanted)</option>
-                  <option value="flashcard">🗂️ Flashcard (Compact & Clear)</option>
-                  <option value="cursive">🖋️ Cursive (Flowing)</option>
-                  <option value="print">✏️ Casual Print (Relaxed)</option>
-                  <option value="bold">🖊️ Bold Marker (Thick & Punchy)</option>
-                  <option value="neat">📐 Neat & Technical (Precise)</option>
-                  <option value="elegant">🌸 Elegant Script (Flowing Calligraphy)</option>
+                  <option value="text">📝 Standard</option>
+                  <option value="journal">📓 Journal</option>
+                  <option value="cute">🖊️ Rounded</option>
+                  <option value="signature">✒️ Signature</option>
+                  <option value="flashcard">🗂️ Compact</option>
+                  <option value="cursive">🖋️ Cursive</option>
+                  <option value="print">✏️ Print</option>
+                  <option value="bold">🖊️ Bold</option>
+                  <option value="neat">📐 Technical</option>
+                  <option value="elegant">🖋️ Script</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-2">Applies to PDF uploads - the AI transcribes the page, then typesets it in this style.</p>
               </div>
