@@ -51,6 +51,8 @@ export default function PDFHandwritingConverter() {
   const [copyModeLoading, setCopyModeLoading] = useState(false);
   const [copyModeCopied, setCopyModeCopied] = useState(false);
   const [copyModeImagePreview, setCopyModeImagePreview] = useState(null);
+  const [copyModeImageCopied, setCopyModeImageCopied] = useState(false);
+  const [copyModeImageBusy, setCopyModeImageBusy] = useState(false);
 
   // Load PDF.js
   useEffect(() => {
@@ -577,6 +579,103 @@ export default function PDFHandwritingConverter() {
       nodes.push(<span key={key++} className="whitespace-pre-wrap">{text.slice(lastIndex)}</span>);
     }
     return nodes;
+  };
+
+  // Copy Mode's "Copy to Clipboard" gives raw $-delimited LaTeX text, which
+  // only renders correctly in apps that understand LaTeX. Most places a
+  // student pastes (Gmail, Slack, Discord, a plain Google Doc, iMessage)
+  // don't - they'd just see literal dollar signs and backslashes. This
+  // rasterizes the same content, properly typeset via KaTeX, into a PNG and
+  // puts that on the clipboard instead, so it pastes as a normal image
+  // anywhere images are accepted - no LaTeX support required on the other end.
+  const buildCleanTypesetCanvas = async (text) => {
+    if (!window.katex || !window.html2canvas) {
+      throw new Error('Renderer not loaded yet');
+    }
+    const cssWidth = 700;
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-99999px';
+    container.style.top = '0';
+    container.style.width = `${cssWidth}px`;
+    container.style.padding = '32px';
+    container.style.boxSizing = 'border-box';
+    container.style.background = '#ffffff';
+    container.style.color = '#111111';
+    container.style.fontFamily = "Georgia, 'Times New Roman', serif";
+    container.style.fontSize = '17px';
+    container.style.lineHeight = '28px';
+    container.style.whiteSpace = 'pre-wrap';
+    container.style.wordBreak = 'break-word';
+
+    const mathRegex = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = mathRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        const span = document.createElement('span');
+        span.textContent = text.slice(lastIndex, match.index);
+        container.appendChild(span);
+      }
+      const isDisplay = match[1] !== undefined;
+      const value = isDisplay ? match[1] : match[2];
+      const span = document.createElement('span');
+      span.style.display = isDisplay ? 'block' : 'inline-block';
+      span.style.margin = isDisplay ? '10px 0' : '0 2px';
+      try {
+        span.innerHTML = window.katex.renderToString(value, { throwOnError: false, displayMode: isDisplay });
+      } catch (e) {
+        span.textContent = value;
+      }
+      container.appendChild(span);
+      lastIndex = mathRegex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      const span = document.createElement('span');
+      span.textContent = text.slice(lastIndex);
+      container.appendChild(span);
+    }
+
+    document.body.appendChild(container);
+    try {
+      await document.fonts.ready;
+      const fullHeight = Math.ceil(container.scrollHeight);
+      return await window.html2canvas(container, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        width: cssWidth,
+        height: fullHeight,
+        windowWidth: cssWidth,
+        windowHeight: fullHeight
+      });
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
+  const copyResultAsImage = async () => {
+    setCopyModeImageBusy(true);
+    try {
+      const canvas = await buildCleanTypesetCanvas(copyModeResult);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Could not generate image');
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+        setCopyModeImageCopied(true);
+        setTimeout(() => setCopyModeImageCopied(false), 2000);
+      } else {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'equations.png';
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+    } catch (err) {
+      console.error('Copy as image failed:', err);
+      alert('❌ Could not copy as image - your browser may not support image clipboard access. Try the text copy option instead.');
+    }
+    setCopyModeImageBusy(false);
   };
 
   // Renders transcribed text+LaTeX into a clean image using KaTeX (for real
@@ -1714,10 +1813,16 @@ export default function PDFHandwritingConverter() {
                 <div>
                   <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                     <h3 className="text-lg font-bold">Cleaned LaTeX - copy this</h3>
-                    <button onClick={copyResultToClipboard} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold transition-all">
-                      {copyModeCopied ? '✓ Copied!' : '📋 Copy to Clipboard'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={copyResultToClipboard} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold transition-all">
+                        {copyModeCopied ? '✓ Copied!' : '📋 Copy as Text'}
+                      </button>
+                      <button onClick={copyResultAsImage} disabled={copyModeImageBusy} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-semibold transition-all">
+                        {copyModeImageBusy ? 'Rendering...' : copyModeImageCopied ? '✓ Copied!' : '🖼️ Copy as Image'}
+                      </button>
+                    </div>
                   </div>
+                  <p className="text-xs text-gray-500 mb-2">"Copy as Text" pastes as raw LaTeX ($...$) - use it in Overleaf, Word, Notion, or other LaTeX-aware apps. "Copy as Image" pastes as a normal picture with the math already typeset - use it anywhere else (Docs, Gmail, Slack, Discord, iMessage) with no LaTeX needed.</p>
                   <textarea
                     readOnly
                     value={copyModeResult}
@@ -1734,7 +1839,8 @@ export default function PDFHandwritingConverter() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-bold mb-3">Where to Paste This</h3>
+                  <h3 className="text-lg font-bold mb-1">Where to Paste This</h3>
+                  <p className="text-xs text-gray-500 mb-3">Don't want to deal with LaTeX at all? Hit "Copy as Image" above instead - it pastes as a normal picture into any of these, no setup required.</p>
                   <div className="grid sm:grid-cols-2 gap-3">
                     {[
                       ['📄', 'Overleaf / LaTeX editors', 'Paste directly into your .tex file - the $ and $$ delimiters are already valid LaTeX math mode.'],
@@ -1742,7 +1848,7 @@ export default function PDFHandwritingConverter() {
                       ['📓', 'Notion / Obsidian', 'Type $$ to start a math block (or wrap inline text in single $), then paste the equation between them.'],
                       ['💻', 'GitHub, GitLab, Jupyter', 'Paste straight into a Markdown file or notebook cell - both render $...$ and $$...$$ automatically.'],
                       ['🤖', 'Back into ChatGPT/Claude', 'Paste it back in if you want the AI to keep editing - it reads as proper LaTeX this time, not garbled text.'],
-                      ['📝', 'Google Docs', 'Use an equation add-on like "Auto-LaTeX Equations," or paste each $...$ snippet into the built-in equation editor.']
+                      ['✉️', 'Gmail, Slack, Discord, Docs', 'These don\'t render raw LaTeX text - use "Copy as Image" instead and paste it in like a picture.']
                     ].map(([icon, title, body]) => (
                       <div key={title} className="flex gap-3 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
                         <span className="text-2xl">{icon}</span>
